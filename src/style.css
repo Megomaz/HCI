@@ -1,0 +1,618 @@
+:root {
+  --text: #1b2a41; /* navy, body + headings */
+  --accent: #00695c; /* teal, primary buttons and links */
+  --accent-soft: #e6f2ef; /* highlights, reading-aloud line, info boxes */
+  --error: #b3261e; /* error state only */
+  --bg: #f7f9f8;
+  --surface: #ffffff;
+  --space: 8px; /* spacing unit; use multiples */
+  --radius: 12px;
+
+  /* Derived from the tokens above */
+  --accent-pressed: #00524a;
+  --text-muted: #46566b;
+  --border: #c5d2ce;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 1.125rem; /* 18px minimum */
+  line-height: 1.5;
+  -webkit-tap-highlight-color: transparent;
+  overflow-wrap: anywhere;
+}
+
+h1,
+h2,
+h3,
+p,
+ul {
+  margin: 0;
+}
+
+ul {
+  padding: 0;
+  list-style: none;
+}
+
+/* The hidden attribute must win over any display rule below */
+[hidden] {
+  display: none !important;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Clearly visible focus ring on everything */
+:focus-visible {
+  outline: 3px solid var(--text);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* ---------- Page frame ---------- */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  max-width: 480px;
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: calc(var(--space) * 3) calc(var(--space) * 2) calc(var(--space) * 3);
+}
+
+main {
+  flex: 1;
+}
+
+.app-header {
+  margin-bottom: calc(var(--space) * 3);
+}
+
+.step {
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.segments {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin: var(--space) 0 calc(var(--space) * 2.5);
+}
+
+.segments span {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--border);
+}
+
+.segments span.on {
+  background: var(--accent);
+}
+
+h1 {
+  font-size: 1.75rem; /* 28px */
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+h2 {
+  font-size: 1.625rem; /* 26px */
+  line-height: 1.25;
+  font-weight: 700;
+}
+
+h3 {
+  font-size: 1.25rem;
+  line-height: 1.3;
+  font-weight: 700;
+}
+
+.screen-heading {
+  margin-bottom: calc(var(--space) * 2);
+}
+
+.app-footer {
+  margin-top: calc(var(--space) * 5);
+  padding-top: calc(var(--space) * 2);
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 1rem;
+  text-align: center;
+}
+
+/* ---------- Buttons ---------- */
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space) * 1.5);
+  margin-top: calc(var(--space) * 3);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space);
+  width: 100%;
+  min-height: 56px;
+  padding: calc(var(--space) * 1.5) calc(var(--space) * 2);
+  border: 2px solid var(--accent);
+  border-radius: var(--radius);
+  font: inherit;
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: center;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.btn .icon {
+  flex: none;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn-primary:active {
+  background: var(--accent-pressed);
+  border-color: var(--accent-pressed);
+}
+
+.btn-secondary {
+  background: var(--surface);
+  color: var(--accent);
+}
+
+.btn-secondary:active {
+  background: var(--accent-soft);
+}
+
+.btn-link {
+  min-height: 48px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
+
+.btn-link:active {
+  background: var(--accent-soft);
+}
+
+/* ---------- Boxes ---------- */
+
+.tip {
+  display: flex;
+  align-items: flex-start;
+  gap: calc(var(--space) * 1.5);
+  margin-bottom: calc(var(--space) * 2);
+  padding: calc(var(--space) * 1.5) calc(var(--space) * 2);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+
+.tip .icon {
+  flex: none;
+  margin-top: 2px;
+  color: var(--accent);
+}
+
+.soft-box,
+.card {
+  padding: calc(var(--space) * 2.5) calc(var(--space) * 2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.original {
+  line-height: 2;
+}
+
+/* Difficult words: real buttons with a dotted underline */
+.term {
+  display: inline-block;
+  max-width: 100%;
+  /* Invisible padding makes the tap area 48px tall without pushing the lines apart */
+  margin: -11px -8px;
+  padding: 11px 8px;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: left;
+  white-space: normal;
+  vertical-align: baseline;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.term span {
+  border-radius: 4px;
+  text-decoration: underline dotted;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 5px;
+}
+
+.term:active span {
+  background: var(--accent-soft);
+}
+
+/* Thick, tight focus ring around the word itself */
+.term:focus-visible {
+  outline: none;
+}
+
+.term:focus-visible span {
+  outline: 3px solid var(--text);
+  outline-offset: 2px;
+  background: var(--surface);
+}
+
+/* The line being read aloud */
+.sentence.speaking {
+  border-radius: 4px;
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.tip.speaking {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+h3 .speaking {
+  border-radius: 4px;
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 6px var(--accent-soft);
+}
+
+/* The word whose meaning is being read aloud */
+.term.speaking span {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent);
+  color: #fff;
+}
+
+/* ---------- Messages and form fields ---------- */
+
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: calc(var(--space) * 1.5);
+  padding: calc(var(--space) * 1.5) calc(var(--space) * 2);
+  border: 2px solid var(--text);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-weight: 700;
+}
+
+.notice[hidden] {
+  display: none;
+}
+
+.notice .icon {
+  flex: none;
+  margin-top: 2px;
+}
+
+.field {
+  margin-top: calc(var(--space) * 3);
+}
+
+.field label {
+  display: block;
+  font-weight: 700;
+}
+
+.hint {
+  margin-bottom: var(--space);
+  color: var(--text-muted);
+}
+
+.field textarea {
+  display: block;
+  width: 100%;
+  padding: calc(var(--space) * 1.5);
+  border: 2px solid var(--text-muted);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+
+/* ---------- Word meaning bottom sheet ---------- */
+
+.sheet {
+  position: fixed;
+  inset: auto 0 0 0;
+  width: 100%;
+  max-width: 480px;
+  max-height: 85vh;
+  margin: 0 auto;
+  padding: 0;
+  overflow: auto;
+  border: 0;
+  border-radius: 20px 20px 0 0;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 -8px 32px rgba(27, 42, 65, 0.25);
+}
+
+.sheet::backdrop {
+  background: rgba(27, 42, 65, 0.55);
+}
+
+.sheet[open] {
+  animation: sheet-up 0.22s ease-out;
+}
+
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.sheet-body {
+  padding: calc(var(--space) * 3.5) calc(var(--space) * 2) calc(var(--space) * 3);
+}
+
+.sheet-word {
+  margin-bottom: var(--space);
+  overflow-wrap: anywhere;
+}
+
+.sheet-meaning {
+  font-size: 1.25rem;
+}
+
+.sheet .notice {
+  margin-top: calc(var(--space) * 2);
+}
+
+/* ---------- Simplifying ---------- */
+
+.status-card {
+  padding-top: calc(var(--space) * 4);
+  padding-bottom: calc(var(--space) * 4);
+}
+
+.loader {
+  height: 12px;
+  margin-bottom: calc(var(--space) * 2);
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.loader span {
+  display: block;
+  width: 40%;
+  height: 100%;
+  border-radius: 6px;
+  background: var(--accent);
+  animation: loader-slide 1.3s ease-in-out infinite;
+}
+
+@keyframes loader-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+
+/* ---------- Error ---------- */
+
+.error-card {
+  margin-bottom: calc(var(--space) * 3);
+  border: 3px solid var(--error);
+}
+
+.error-title {
+  display: flex;
+  align-items: flex-start;
+  gap: calc(var(--space) * 1.5);
+}
+
+.error-title .icon {
+  flex: none;
+  margin-top: 3px;
+  color: var(--error);
+}
+
+.error-title .screen-heading {
+  margin-bottom: var(--space);
+}
+
+/* ---------- Checklist ---------- */
+
+.check-section + .check-section {
+  margin-top: calc(var(--space) * 3);
+}
+
+.check-section h3 {
+  margin-bottom: var(--space);
+}
+
+.check-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space);
+}
+
+.check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: calc(var(--space) * 1.5);
+  min-height: 56px;
+  padding: calc(var(--space) * 1.75) calc(var(--space) * 2);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.check-row input {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.check-row.checked {
+  border-color: var(--accent);
+}
+
+.check-row.speaking {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.check-text {
+  min-width: 0;
+}
+
+/* ---------- Reading aloud ---------- */
+
+.reading-status {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space) * 1.5);
+  margin-bottom: calc(var(--space) * 2);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.sound-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 24px;
+}
+
+.sound-bar i {
+  width: 4px;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transform: scaleY(0.35);
+  animation: sound-bounce 0.9s ease-in-out infinite;
+}
+
+.sound-bar i:nth-child(2) {
+  animation-delay: -0.6s;
+}
+.sound-bar i:nth-child(3) {
+  animation-delay: -0.3s;
+}
+.sound-bar i:nth-child(4) {
+  animation-delay: -0.75s;
+}
+.sound-bar i:nth-child(5) {
+  animation-delay: -0.45s;
+}
+
+.reading-status.stopped {
+  color: var(--text);
+}
+
+.reading-status.stopped .sound-bar i {
+  animation: none;
+  background: var(--text-muted);
+}
+
+@keyframes sound-bounce {
+  0%,
+  100% {
+    transform: scaleY(0.3);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+/* ---------- Done listening ---------- */
+
+.done-card p {
+  margin-top: 0;
+}
+
+.done-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: calc(var(--space) * 2);
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* ---------- Motion ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .loader span {
+    width: 100%;
+    animation: none;
+  }
+
+  .sound-bar i {
+    animation: none;
+    transform: scaleY(0.6);
+  }
+
+  .sound-bar i:nth-child(odd) {
+    transform: scaleY(1);
+  }
+
+  .sheet[open] {
+    animation: none;
+  }
+}
