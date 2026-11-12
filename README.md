@@ -7,8 +7,7 @@ English, and ends with a checklist of what to send. Everything can be read aloud
 **Persona (synthetic):** Patrick, 62, a self-employed plumber in Ireland with low literacy and
 limited tech confidence, who does his paperwork on his phone.
 
-**Public link:** https://t-21co8tvij-megomaz.vercel.app — deployed on Vercel, but at the moment it
-asks visitors to log in to Vercel. See [Deploy](#deploy) for how to make it public.
+**Public link:** https://t-megomaz.vercel.app — opens on a phone, no login needed.
 
 ## Run it locally
 
@@ -65,10 +64,11 @@ npm run dev
   the function does not log it. Reloading the page forgets it.
 - Letters longer than 8,000 characters are refused rather than cut short.
 
-**Tried once against the real AI.** A photo of a short synthetic letter went through OCR and the
-real DeepSeek model locally in about 14 seconds, and came back with sensible meanings, a simple
-version and a checklist. That is one letter; answers on other letters have not been reviewed.
-The automated tests use a stand-in that answers in the same format, not the real AI.
+**Checked against the real AI on one letter.** A photo of a short synthetic letter went through
+OCR and the real DeepSeek model, both locally and on the public link (about 15 to 25 seconds), and
+came back with sensible meanings, a simple version and a checklist. Answers on other letters have
+not been reviewed. The automated tests use a stand-in that answers in the same format, not the
+real AI.
 
 How each file type is read, all in the browser:
 
@@ -81,8 +81,9 @@ How each file type is read, all in the browser:
 
 ## Deploy
 
-The site is on Vercel, which also runs the serverless function (a static host such as GitHub
-Pages is not enough). `OPENROUTER_API_KEY` is set under Project Settings → Environment Variables.
+The site is hosted on Vercel at https://t-megomaz.vercel.app. Vercel also runs the serverless
+function, which is why a static host such as GitHub Pages would not be enough.
+`OPENROUTER_API_KEY` is set in the Vercel project under Settings → Environment Variables.
 
 To publish a new version:
 
@@ -90,11 +91,7 @@ To publish a new version:
 npx vercel --prod
 ```
 
-**Making the link public.** Vercel protects deployment addresses by default, so people who are
-not logged in to the Vercel account see a login page. Either share the project's production
-domain (Vercel dashboard → the project → Domains), or turn the protection off under
-Project Settings → Deployment Protection → Vercel Authentication. Then open the link in a private
-browser window to check, and update the link at the top of this file.
+Without the key the sample letter still works; uploads show the error state.
 
 ## Tests
 
@@ -145,7 +142,7 @@ the highlight followed every line. It has not yet been checked by ear on a phone
 | 200% zoom | No sideways scrolling, tested at half-width layouts down to 195px. |
 | Reduced motion | No progress, sound-bar or sheet animation when the device asks for less motion. |
 | No time limits | Nothing times out on the user; "Reading your letter…" can be stopped. |
-| Language, type, colour | `lang="en-IE"`, Atkinson Hyperlegible only, the colours in PLAN.md. |
+| Language, type, colour | `lang="en-IE"`, Atkinson Hyperlegible only, one set of colour tokens (top of `src/style.css`). |
 
 One limit to know about: the underlined words sit inside a sentence, so their tap area is 48px
 tall but only as wide as the word, and tap areas on neighbouring lines overlap slightly in the
@@ -178,4 +175,3 @@ The font is bundled with the app. The PDF, OCR and Word readers load only when a
 | `src/style.css` | Design tokens and all styles. |
 | `scripts/copy-ocr-assets.mjs` | Copies the OCR engine into the site before dev and build. |
 | `tests/` | Playwright tests, test letters, and the stand-in for OpenRouter. |
-| `PLAN.md` | The build plan. |

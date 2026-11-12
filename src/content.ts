@@ -1,4 +1,4 @@
-/** Synthetic sample letter. Wording is fixed by PLAN.md §7 — do not edit. */
+/** Synthetic sample letter. This wording is fixed for the project — do not edit. */
 
 export interface Checklist {
   mustHave: string[];

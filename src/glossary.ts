@@ -4,7 +4,7 @@ export interface DifficultWord {
   meaning: string;
 }
 
-/** The sample letter's difficult words (PLAN.md §7). Uploaded letters get theirs from the AI. */
+/** The sample letter's difficult words. Uploaded letters get theirs from the AI. */
 export const SAMPLE_WORDS: readonly DifficultWord[] = [
   { term: "furnish", meaning: "Give or send." },
   {
