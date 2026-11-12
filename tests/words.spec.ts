@@ -2,10 +2,10 @@ import { expect, test, type Page } from "@playwright/test";
 import {
   GLOSSARY,
   ORIGINAL_WORDS,
-  goToChecklist,
   installFakeSpeech,
   shot,
   spokenTexts,
+  useSample,
 } from "./helpers";
 
 test.beforeEach(async ({ page }) => {
@@ -44,7 +44,7 @@ async function selectText(page: Page, containerSelector: string, text: string): 
 }
 
 test("every underlined word opens the right meaning by tap", async ({ page }) => {
-  await page.goto("/");
+  await useSample(page);
   for (const word of ORIGINAL_WORDS) {
     await page.getByRole("button", { name: `${word}, show meaning` }).click();
     await expectMeaning(page, word);
@@ -52,22 +52,27 @@ test("every underlined word opens the right meaning by tap", async ({ page }) =>
     await expect(dialog(page)).toBeHidden();
   }
 
-  await goToChecklist(page);
+  await page.getByRole("button", { name: "Skip to checklist" }).click();
   await page.getByRole("button", { name: "tax return, show meaning" }).click();
   await expectMeaning(page, "tax return");
-  await shot(page, "9-word-meaning");
+  await shot(page, "4-word-meaning");
   await page.getByRole("button", { name: "Close" }).click();
   // Tapping the word inside a checklist row does not tick the row
   await expect(page.getByRole("checkbox").first()).not.toBeChecked();
 });
 
-test("every underlined word can be reached with Tab and opened with Enter or Space", async ({
+test("audit fix 1: every underlined word is a real button in the sentence, reached with Tab in reading order; Enter and Space open it; Esc returns focus", async ({
   page,
 }) => {
-  await page.goto("/");
+  await useSample(page);
+
+  // Real <button> elements, inside the sentence text
+  const buttons = page.locator(".letter-text .sentence button.term");
+  await expect(buttons).toHaveCount(ORIGINAL_WORDS.length);
+  await expect(buttons).toHaveText(ORIGINAL_WORDS);
+
   let useEnter = true;
   for (const word of ORIGINAL_WORDS) {
-    // Tab order follows reading order, starting from the top of the page
     await page.keyboard.press("Tab");
     const button = page.getByRole("button", { name: `${word}, show meaning` });
     await expect(button).toBeFocused();
@@ -80,62 +85,107 @@ test("every underlined word can be reached with Tab and opened with Enter or Spa
     await expect(dialog(page)).toBeHidden();
     await expect(button).toBeFocused();
   }
-
-  await goToChecklist(page);
-  const taxReturn = page.getByRole("button", { name: "tax return, show meaning" });
-  await taxReturn.focus();
-  await page.keyboard.press("Enter");
-  await expectMeaning(page, "tax return");
 });
 
-test("the focused word has a thick, visible outline", async ({ page }) => {
-  await page.goto("/");
+test("audit fix 1: the focused word has a 3px navy outline, 2px offset, and a soft teal background", async ({
+  page,
+}) => {
+  await useSample(page);
   await page.keyboard.press("Tab");
-  const outline = await page
+  const style = await page
     .getByRole("button", { name: "furnish, show meaning" })
     .locator("span")
     .evaluate((el) => {
-      const style = getComputedStyle(el);
-      return { width: style.outlineWidth, style: style.outlineStyle, color: style.outlineColor };
+      const computed = getComputedStyle(el);
+      return {
+        width: computed.outlineWidth,
+        style: computed.outlineStyle,
+        color: computed.outlineColor,
+        offset: computed.outlineOffset,
+        background: computed.backgroundColor,
+      };
     });
-  expect(outline).toEqual({ width: "3px", style: "solid", color: "rgb(27, 42, 65)" });
+  expect(style).toEqual({
+    width: "3px",
+    style: "solid",
+    color: "rgb(27, 42, 65)", // navy #1B2A41
+    offset: "2px",
+    background: "rgb(230, 242, 239)", // soft teal #E6F2EF
+  });
+  await shot(page, "2-word-focus");
+});
+
+test('audit fix 2: word buttons are named "furnish, show meaning"; the tip is real text linked to the letter', async ({
+  page,
+}) => {
+  await useSample(page);
+  for (const word of ORIGINAL_WORDS) {
+    await expect(page.getByRole("button", { name: `${word}, show meaning`, exact: true })).toBeVisible();
+  }
+
+  // Step 2
+  const tip = page.locator("#tip");
+  await expect(tip).toHaveText("Tip: tap any underlined word to see what it means.");
+  const letter = page.getByRole("group", { name: "Your letter" });
+  await expect(letter).toHaveAttribute("aria-describedby", "tip");
+  await expect(letter).toHaveAccessibleDescription(
+    "Tip: tap any underlined word to see what it means.",
+  );
+  // The tip comes before the letter in the page
+  expect(
+    await page.evaluate(
+      () =>
+        !!(
+          document.querySelector("#tip")!.compareDocumentPosition(
+            document.querySelector(".letter-text")!,
+          ) & Node.DOCUMENT_POSITION_FOLLOWING
+        ),
+    ),
+  ).toBe(true);
+
+  // Step 3
+  await page.getByRole("button", { name: "Next: simple version" }).click();
+  await expect(page.locator("#tip")).toHaveText("Tip: tap any underlined word to see what it means.");
+  await expect(
+    page.getByRole("group", { name: "Simple version of your letter" }),
+  ).toHaveAccessibleDescription("Tip: tap any underlined word to see what it means.");
 });
 
 test("every glossary word opens the right meaning by selecting it", async ({ page }) => {
-  await page.goto("/");
+  await useSample(page);
   for (const word of ORIGINAL_WORDS) {
-    await selectText(page, ".original", word);
+    await selectText(page, ".letter-text", word);
     await expectMeaning(page, word);
     await page.getByRole("button", { name: "Close" }).click();
     await expect(dialog(page)).toBeHidden();
   }
 
   // Selecting part of an underlined phrase gives the whole phrase
-  await selectText(page, ".original", "documentary");
+  await selectText(page, ".letter-text", "documentary");
   await expectMeaning(page, "documentary evidence");
   await page.getByRole("button", { name: "Close" }).click();
 
-  await goToChecklist(page);
+  await page.getByRole("button", { name: "Skip to checklist" }).click();
   await selectText(page, ".check-list", "tax return");
   await expectMeaning(page, "tax return");
 });
 
-test("selecting a word that is not in the glossary says so", async ({ page }) => {
-  await page.goto("/");
-  await selectText(page, ".original", "Applicants");
+test("selecting a word with no meaning says so", async ({ page }) => {
+  await useSample(page);
+  await selectText(page, ".letter-text", "Applicants");
   await expect(dialog(page).getByRole("heading", { name: "Applicants" })).toBeVisible();
   await expect(dialog(page)).toContainText("We don't have a simple meaning for this word yet.");
   await expect(page.getByRole("button", { name: "Read meaning aloud" })).toBeHidden();
   await page.getByRole("button", { name: "Close" }).click();
 
   // A long selection (someone copying a sentence) is left alone
-  await selectText(page, ".original", "including self-employment income for the");
+  await selectText(page, ".letter-text", "including self-employment income for the");
   await page.waitForTimeout(1000);
   await expect(dialog(page)).toBeHidden();
 });
 
 test("the sheet is a proper dialog", async ({ page }) => {
-  await page.goto("/");
+  await useSample(page);
   const opener = page.getByRole("button", { name: "residency, show meaning" });
   await opener.click();
 
@@ -143,6 +193,7 @@ test("the sheet is a proper dialog", async ({ page }) => {
   await expect(dialog(page)).toHaveAccessibleName("residency");
   await expect(dialog(page)).toHaveAccessibleDescription("Where you live.");
   await expect(dialog(page).getByRole("heading", { name: "residency" })).toBeFocused();
+  await expect(dialog(page).getByRole("button")).toHaveText(["Read meaning aloud", "Close"]);
 
   // Tab stays inside
   const read = page.getByRole("button", { name: "Read meaning aloud" });
@@ -158,11 +209,10 @@ test("the sheet is a proper dialog", async ({ page }) => {
     );
     expect(inside, "focus must not reach the page behind the dialog").toBe(true);
   }
-  await page.keyboard.press("Shift+Tab");
 
   // The page behind cannot be used while it is open
   const reachedPageBehind = await page.evaluate(() => {
-    const behind = document.querySelector<HTMLElement>('[data-action="simplify"]')!;
+    const behind = document.querySelector<HTMLElement>('[data-action="go-3"]')!;
     behind.focus();
     return document.activeElement === behind;
   });
@@ -181,7 +231,7 @@ test("the sheet is a proper dialog", async ({ page }) => {
 });
 
 test("Read meaning aloud speaks the word and its meaning; closing stops it", async ({ page }) => {
-  await page.goto("/");
+  await useSample(page);
   await page.getByRole("button", { name: "assessment, show meaning" }).click();
   await page.getByRole("button", { name: "Read meaning aloud" }).click();
   await expect

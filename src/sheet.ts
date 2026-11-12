@@ -1,13 +1,12 @@
-import { lookup } from "./glossary";
+import type { DifficultWord } from "./glossary";
 import { icon } from "./icons";
 import { NO_SPEECH_MESSAGE, speakOnce, speechAvailable, stopSpeech } from "./speech";
 
 const UNKNOWN_MESSAGE = "We don't have a simple meaning for this word yet.";
-const LOOKING_MESSAGE = "Finding a simple meaning…";
 
 export interface SheetOptions {
-  /** Live mode only: ask the AI about a word that is not in the glossary. */
-  explain?: (word: string) => Promise<string>;
+  /** Find a word among the current letter's difficult words. */
+  lookup: (word: string) => DifficultWord | undefined;
   /** Called just before the sheet opens (used to pause the checklist reading). */
   onOpen?: () => void;
 }
@@ -21,7 +20,7 @@ export interface Sheet {
  * Word-meaning bottom sheet. A native modal <dialog>, so the browser keeps Tab
  * inside it, makes the page behind it inert, and closes it on Esc.
  */
-export function createSheet(options: SheetOptions = {}): Sheet {
+export function createSheet(options: SheetOptions): Sheet {
   const dialog = document.createElement("dialog");
   dialog.className = "sheet";
   dialog.id = "word-sheet";
@@ -30,7 +29,7 @@ export function createSheet(options: SheetOptions = {}): Sheet {
   dialog.innerHTML = `
     <div class="sheet-body">
       <h2 class="sheet-word" id="sheet-word" tabindex="-1"></h2>
-      <p class="sheet-meaning" id="sheet-meaning" aria-live="polite"></p>
+      <p class="sheet-meaning" id="sheet-meaning"></p>
       <p class="notice" id="sheet-notice" role="status" hidden></p>
       <div class="actions">
         <button type="button" class="btn btn-primary" id="sheet-read">${icon("speaker")}<span>Read meaning aloud</span></button>
@@ -47,7 +46,6 @@ export function createSheet(options: SheetOptions = {}): Sheet {
 
   let returnFocusTo: HTMLElement | null = null;
   let spokenText = "";
-  let lookupRun = 0;
   let needsCleanup = false;
 
   function showMeaning(word: string, meaning: string | undefined): void {
@@ -75,7 +73,6 @@ export function createSheet(options: SheetOptions = {}): Sheet {
   function afterClose(): void {
     if (!needsCleanup) return;
     needsCleanup = false;
-    lookupRun += 1;
     stopSpeech();
     const target = returnFocusTo;
     returnFocusTo = null;
@@ -114,26 +111,10 @@ export function createSheet(options: SheetOptions = {}): Sheet {
       returnFocusTo =
         opener ?? (active instanceof HTMLElement && active !== document.body ? active : null);
 
-      wordEl.textContent = word;
+      const known = options.lookup(word);
+      wordEl.textContent = known?.term ?? word;
       noticeEl.hidden = true;
-      const meaning = lookup(word);
-
-      if (meaning || !options.explain) {
-        showMeaning(word, meaning);
-      } else {
-        const run = ++lookupRun;
-        meaningEl.textContent = LOOKING_MESSAGE;
-        spokenText = "";
-        readButton.hidden = true;
-        options.explain(word).then(
-          (answer) => {
-            if (run === lookupRun) showMeaning(word, answer);
-          },
-          () => {
-            if (run === lookupRun) showMeaning(word, undefined);
-          },
-        );
-      }
+      showMeaning(known?.term ?? word, known?.meaning);
 
       needsCleanup = true;
       dialog.showModal();

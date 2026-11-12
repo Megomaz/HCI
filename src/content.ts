@@ -1,11 +1,5 @@
-/** Synthetic demo content. Wording is fixed by PLAN.md §6 — do not edit. */
+/** Synthetic sample letter. Wording is fixed by PLAN.md §7 — do not edit. */
 
-export const ORIGINAL_SENTENCES: readonly string[] = [
-  "Applicants must furnish documentary evidence of all means, including self-employment income for the preceding 12-month period, together with proof of residency.",
-  "Where the applicant's circumstances have materially altered since the previous assessment, supplementary documentation may be required.",
-];
-
-/** Same shape the live-mode API returns (Milestone 5). */
 export interface Checklist {
   mustHave: string[];
   optional: string[];
@@ -20,7 +14,20 @@ export const SECTIONS: readonly { key: SectionKey; title: string }[] = [
   { key: "onlyIfNeeded", title: "Only if needed" },
 ];
 
-export const DEMO_CHECKLIST: Checklist = {
+export const SAMPLE_SENTENCES: readonly string[] = [
+  "Applicants must furnish documentary evidence of all means, including self-employment income for the preceding 12-month period, together with proof of residency.",
+  "Where the applicant's circumstances have materially altered since the previous assessment, supplementary documentation may be required.",
+];
+
+export const SAMPLE_SIMPLE_VERSION: readonly string[] = [
+  "You must send papers that show all the money you get.",
+  "This includes money from your own work in the last 12 months.",
+  "You must also send proof of where you live.",
+  "Has anything big changed since your last check?",
+  "If so, you may need to send extra papers.",
+];
+
+export const SAMPLE_CHECKLIST: Checklist = {
   mustHave: [
     "Proof of your income for the last 12 months (for example, your tax return)",
     "Proof of your address (for example, a recent bill)",
@@ -30,3 +37,10 @@ export const DEMO_CHECKLIST: Checklist = {
     "If your income or home changed since last year, send proof of the change",
   ],
 };
+
+export const STEP_NAMES = [
+  "Upload your letter",
+  "Understand the words",
+  "Simple version",
+  "Your checklist",
+] as const;

@@ -17,6 +17,9 @@ const PATHS = {
   warning:
     '<path d="M12 3.5L2.5 20h19L12 3.5z"/><path d="M12 10v5"/><path d="M12 17.5v.5"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  next: '<path d="M5 12h14"/><path d="M13 6l6 6-6 6"/>',
+  skip: '<path d="M5 6l7 6-7 6"/><path d="M13 6l7 6-7 6"/>',
+  upload: '<path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M5 20h14"/>',
 } as const;
 
 export type IconName = keyof typeof PATHS;

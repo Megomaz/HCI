@@ -1,21 +1,21 @@
 import { defineConfig, loadEnv, type Plugin } from "vite";
 
 /**
- * Local stand-in for the hosting platform: serves the functions in /api during
- * `npm run dev`, so live mode (?live=1) can be tried without deploying.
- * Put ANTHROPIC_API_KEY in .env.local (never committed). Demo mode needs none of this.
+ * Local stand-in for the hosting platform: serves /api/simplify during
+ * `npm run dev`, so uploaded letters can be tried without deploying.
+ * Put OPENROUTER_API_KEY in .env.local (never committed). The sample letter needs none of this.
  */
 function apiDuringDev(): Plugin {
   return {
     name: "translate-api-during-dev",
     configureServer(server) {
       const env = loadEnv(server.config.mode, process.cwd(), "");
-      if (env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_API_KEY) {
-        process.env.ANTHROPIC_API_KEY = env.ANTHROPIC_API_KEY;
+      for (const name of ["OPENROUTER_API_KEY", "OPENROUTER_MODEL", "OPENROUTER_BASE_URL"]) {
+        if (env[name] && !process.env[name]) process.env[name] = env[name];
       }
 
       server.middlewares.use(async (req, res, next) => {
-        const match = req.url?.match(/^\/api\/(simplify|explain)(?:\?.*)?$/);
+        const match = req.url?.match(/^\/api\/(simplify)(?:\?.*)?$/);
         if (!match) return next();
 
         try {

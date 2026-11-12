@@ -1,14 +1,14 @@
-# Translate — Medical Card renewal prototype
+# Translate — understand an official letter
 
 A working, mobile-first prototype for a university HCI project (SDG 10, Reduced Inequalities).
-It takes one dense paragraph from a Medical Card renewal and turns it into a plain-English
-checklist that can be read aloud, with tap-to-explain for difficult words.
+You give it an official letter. It explains the difficult words, rewrites the letter in plain
+English, and ends with a checklist of what to send. Everything can be read aloud.
 
 **Persona (synthetic):** Patrick, 62, a self-employed plumber in Ireland with low literacy and
 limited tech confidence, who does his paperwork on his phone.
 
-**Public link:** https://megomaz.github.io/HCI/ — demo mode. It goes live once the one-time
-steps under [Deploy](#deploy) have been run; it has not been published yet.
+**Public link:** https://t-21co8tvij-megomaz.vercel.app — deployed on Vercel, but at the moment it
+asks visitors to log in to Vercel. See [Deploy](#deploy) for how to make it public.
 
 ## Run it locally
 
@@ -22,77 +22,79 @@ npm run dev
 Open http://localhost:5173. To open it on a phone on the same Wi-Fi, run
 `npm run dev -- --host` and use the "Network" address it prints.
 
-No API key or backend is needed. This is **demo mode**, the mode used for the video.
+**The sample letter needs no setup**: no API key, no backend, and once the page is open it works
+with no internet. This is what the video uses.
 
-## What to show (all six features)
+## The four steps
 
-1. **Explain difficult words** — tap an underlined word such as "furnish". A sheet slides up with
-   a one-sentence meaning, **Read meaning aloud** and **Close**. Selecting (highlighting) a word
-   does the same.
-2. **Simplify** — tap **Simplify this**. "Making this easier to read…" shows for about 2 seconds.
-3. **Error handling** — the first Simplify fails on purpose: "Sorry, we couldn't simplify this
-   right now. Your page is still here. Nothing is lost." Tap **Try again**.
-4. **Document checklist** — "What you need to send", in three sections: Must have, Optional,
-   Only if needed. Tap a row to tick it.
-5. **Read aloud** — tap **Read checklist aloud**. The line being spoken is highlighted.
-   **Pause** / **Play**, **Play again**, **Done listening**.
-6. **Original instructions** — tap **See the original text**, then **Back to simple version**.
-
-Reload the page to start again from the top (the on-purpose error comes back).
-
-### Page options
-
-| Address | What it does |
+| Step | What happens |
 |---|---|
-| `/` | Demo mode. The first Simplify fails on purpose. |
-| `/?demoError=0` | Demo mode without the on-purpose failure. |
-| `/?live=1` | Live mode: real AI simplification (needs the setup below). |
+| **1. Upload your letter** | **Choose a letter** (PDF, photo, Word .docx or .txt; on a phone this also offers the camera) or **Use the sample letter**. |
+| **2. Understand the words** | The original letter with difficult words underlined. Tap a word for a one-sentence meaning. **Skip to checklist** jumps to Step 4. |
+| **3. Simple version** | The whole letter in plain English. **See the original letter** switches back and forth. |
+| **4. Your checklist** | Must have / Optional / Only if needed, with tick boxes. **Start again with another letter** returns to Step 1. |
 
-## Live mode (optional)
+Steps 2, 3 and 4 each have a read-aloud button. While reading, the line being spoken is
+highlighted, with **Pause** / **Play**, **Play again** and **Done listening**.
+**Explain words while reading** (on by default) also speaks each underlined word's meaning.
 
-Live mode sends the text to a serverless function, which asks the Anthropic API
-(`claude-haiku-5-5`) for the checklist. It also adds a **Paste your own letter** box to the first
-screen, and asks the AI about selected words that are not in the glossary. Any failure shows the
-normal error state. The API key stays on the server and is never in front-end code.
+### Showing the error state in the video
+
+Open the page as `/?demoError=1`. The first attempt to load a letter fails on purpose with a
+plain-language message; **Try again** then works. Without `?demoError=1` nothing fails on purpose.
+
+## Uploaded letters (needs an OpenRouter key)
+
+The sample letter is pre-written. Any other letter is read in the browser and then sent, as text
+only, to one serverless function (`/api/simplify`), which asks DeepSeek through OpenRouter for the
+difficult words, the simple version and the checklist.
 
 To try it locally:
 
 ```bash
-cp .env.example .env.local     # then put your key after ANTHROPIC_API_KEY=
+cp .env.example .env.local     # then put your key after OPENROUTER_API_KEY=
 npm run dev
 ```
 
-Open http://localhost:5173/?live=1. Demo mode keeps working with or without the key.
+- The key is used only in the serverless function. It is never in front-end code, and `.env` and
+  `.env.local` are ignored by git.
+- `OPENROUTER_MODEL` is optional; the default is `deepseek/deepseek-chat`.
+- If the AI's answer is not valid JSON it is asked once more. If that fails too, or the network
+  fails, Step 1 shows an error with **Try again** and **Use the sample letter**.
+- The letter is never stored: the file stays on the device, the text is held in memory only, and
+  the function does not log it. Reloading the page forgets it.
+- Letters longer than 8,000 characters are refused rather than cut short.
 
-The live path has been tested with the AI's answers mocked. It has **not** been run against the
-real Anthropic API yet, because no key was available when it was built.
+**Tried once against the real AI.** A photo of a short synthetic letter went through OCR and the
+real DeepSeek model locally in about 14 seconds, and came back with sensible meanings, a simple
+version and a checklist. That is one letter; answers on other letters have not been reviewed.
+The automated tests use a stand-in that answers in the same format, not the real AI.
+
+How each file type is read, all in the browser:
+
+| File | How |
+|---|---|
+| PDF | `pdfjs-dist` text layer. A scanned PDF with no text layer shows an error asking for a photo instead. |
+| Photo | `tesseract.js` OCR, English. The OCR files are served from this site, not a third-party CDN. |
+| Word .docx | `mammoth` |
+| .txt | Read directly |
 
 ## Deploy
 
-**Demo mode (the public link above)** is set up for GitHub Pages. One-time steps to publish it:
+The site is on Vercel, which also runs the serverless function (a static host such as GitHub
+Pages is not enough). `OPENROUTER_API_KEY` is set under Project Settings → Environment Variables.
+
+To publish a new version:
 
 ```bash
-git commit -m "Add Translate prototype"
-git push -u origin main
-gh api -X POST repos/Megomaz/HCI/pages -f build_type=workflow   # turn Pages on
-gh workflow run deploy.yml                                       # publish
-```
-
-(The third step can also be done on github.com: Settings → Pages → Source → GitHub Actions.)
-After that, every push to `main` rebuilds and republishes the site through
-`.github/workflows/deploy.yml`.
-
-GitHub Pages only serves static files, so **live mode does not work on that link** — `?live=1`
-there goes to the normal error state. To host live mode, deploy the same repository to Vercel,
-which also runs the two functions in `api/`:
-
-```bash
-npx vercel login
 npx vercel --prod
 ```
 
-Or import the GitHub repository at vercel.com (framework preset: Vite). Then add
-`ANTHROPIC_API_KEY` under Project Settings → Environment Variables.
+**Making the link public.** Vercel protects deployment addresses by default, so people who are
+not logged in to the Vercel account see a login page. Either share the project's production
+domain (Vercel dashboard → the project → Domains), or turn the protection off under
+Project Settings → Deployment Protection → Vercel Authentication. Then open the link in a private
+browser window to check, and update the link at the top of this file.
 
 ## Tests
 
@@ -101,47 +103,49 @@ npx playwright install chromium   # first time only
 npm test
 ```
 
-51 Playwright tests, run at a 390 × 844 phone viewport:
+96 Playwright tests at a 390 × 844 phone viewport. They start their own dev server and a stand-in
+for OpenRouter, so they use no real key and send nothing to the real AI service.
 
-- **Flow** — the whole click-through, the on-purpose error, exact wording of the content.
-- **Read aloud** — one utterance per line, highlight follows each line, Pause / Play / Play
-  again, stopping when you leave the screen, voice choice (en-IE, then en-GB, then any English),
-  and the "Read aloud isn't available on this browser" message. These use a silent stand-in for
-  the browser's speech engine so they are repeatable.
-- **Word meanings** — every glossary word by tap, by keyboard (Enter and Space) and by selection.
-- **Accessibility** — zero axe violations on every screen and state; the whole journey with the
-  keyboard alone; no sideways scrolling at 200% zoom; tap-target sizes and spacing; unique button
-  names; reduced motion.
-- **Live mode** — success, every kind of failure, and the function's input checks.
+- **Flow** — the four steps in order, Back, Skip to checklist, Start again, the sample letter
+  offline, `?demoError=1`.
+- **Read aloud** — the spoken tip, one utterance per sentence, the highlight on each line and on
+  each explained word, the Explain words switch, Pause / Play / Play again, voice choice, and that
+  the page does not jump back once the reader scrolls away from the spoken line.
+- **Word meanings** — every sample word by tap, by keyboard and by selection; the dialog.
+- **Upload** — every file type end to end, each error message, the retry on invalid JSON, and that
+  the key never reaches the browser.
+- **Function** — input checks and the rules for accepting the AI's answer.
+- **Accessibility** — zero axe violations on every step and state, a keyboard-only run through all
+  four steps (including opening a word meaning with Enter), the keyboard-only skip path, 200% zoom,
+  tap-target sizes and spacing, unique button names, reduced motion.
 
-Read aloud was also checked once against the real speech engine in Chromium on macOS (Irish
-voice "Moira"): the highlight followed every line and Pause / Play worked. It has not yet been
-checked by ear on a phone.
+Read aloud was also run once against the real speech engine in Chromium on macOS (Irish voice):
+the highlight followed every line. It has not yet been checked by ear on a phone.
 
 ## Accessibility
 
-Requirements from our audit, and how each is met:
+### Fixes from our lab audit
+
+| Barrier found | Fix |
+|---|---|
+| **Keyboard (POUR O3):** Tab skipped the underlined words, and they had no visible highlight. | Every underlined word is a real `<button>` inside the sentence, reached with Tab in reading order. A focused word has a 3px navy outline, 2px offset, and a soft teal background. Enter and Space open the meaning; Esc closes it and focus returns to the word. |
+| **Screen readers (POUR R1):** nothing said the words could be opened. | Each word button is named "furnish, show meaning". The tip "Tip: tap any underlined word to see what it means." is real text at the top of Steps 2 and 3, linked to the text with `aria-describedby`. |
+| **The app's own Read aloud** said the words as plain text, so a listener never found out the meanings existed. | Read aloud starts with "Tip: tap any underlined word to hear what it means." After each sentence it says "furnish means: give or send." for each underlined word, highlighting that word's button as it does. **Explain words while reading** turns this off. |
+
+### Standing requirements
 
 | Requirement | How |
 |---|---|
-| Every action is one tap or key press | No drag, swipe or hover anywhere. Selecting text is optional. |
-| Real buttons | Every control is a `<button>`; underlined words are buttons named like "furnish, show meaning". |
-| Unique, meaningful button names | Checked by a test on every screen. |
-| Logical Tab order and visible focus | Tab runs top to bottom; 3px navy focus ring on everything. |
+| One tap or key press for everything | No drag, swipe or hover anywhere. Selecting text is optional. |
+| Real buttons, big enough | Every control is a `<button>` (or a checkbox). Buttons are at least 56px tall, every target at least 48×48px, with 8px gaps. |
+| Unique, meaningful button names | Back and Next say where they go ("Back: understand the words"). Checked by a test on every screen. |
+| Focus | Tab runs top to bottom; 3px navy focus ring; focus moves to each new step's heading. |
 | Proper dialog | The word sheet is a modal `<dialog>`: focus moves in, Tab stays inside, Esc and Close dismiss it, focus returns to the word. |
-| Focus on screen change | Focus moves to the new screen's heading. |
-| Contrast and not colour alone | All text is at least 4.5:1; the error has an icon and wording as well as a red border. |
+| Contrast and not colour alone | All text is at least 4.5:1; errors have an icon and wording as well as a red border. |
 | 200% zoom | No sideways scrolling, tested at half-width layouts down to 195px. |
 | Reduced motion | No progress, sound-bar or sheet animation when the device asks for less motion. |
-| No time limits | Nothing times out on the user. |
-
-### Barriers found in our lab audit — now fixed
-
-| Barrier | Fix |
-|---|---|
-| Keyboard only: Tab skipped the underlined words, so their meanings could not be opened. | Each underlined word is a real button. Tab reaches it; Enter or Space opens the meaning. |
-| Operable (POUR O3): underlined words had no visible highlight when selected. | A focused word gets a 3px navy outline. |
-| Robust (POUR R1): read aloud said the underlined words as plain text, so a listener never found out the meanings existed. | Read aloud says the tip first ("Tip: tap any underlined word to see what it means."), then after each sentence says each underlined word and its meaning ("furnish. In simple words: Give or send."), marking the word on screen as it does. Screen readers hear each word as "furnish, show meaning, button". |
+| No time limits | Nothing times out on the user; "Reading your letter…" can be stopped. |
+| Language, type, colour | `lang="en-IE"`, Atkinson Hyperlegible only, the colours in PLAN.md. |
 
 One limit to know about: the underlined words sit inside a sentence, so their tap area is 48px
 tall but only as wide as the word, and tap areas on neighbouring lines overlap slightly in the
@@ -149,25 +153,29 @@ gap between lines. Tapping the word itself always opens the right meaning.
 
 ## Simulated / non-functional elements
 
-- Demo mode uses pre-written simplification; the first Simplify fails on purpose.
-- Only the glossary words have meanings in demo mode.
-- Only step 2 of 4 of the renewal exists; it is not connected to any real service.
-- Checkbox ticks are not saved.
+- The sample letter uses pre-written words, meanings, simple version and checklist.
+- `?demoError=1` makes the first attempt fail on purpose.
+- OCR and AI output can be wrong; the original letter is always available to compare.
+- Checkbox ticks are not saved; nothing is sent to a real renewal service.
 - All content and the persona are synthetic.
 
 ## How it is built
 
 Vite + vanilla TypeScript, plain CSS with custom properties, no framework and no router.
-The font is Atkinson Hyperlegible, bundled with the app so it loads without a network request.
+The font is bundled with the app. The PDF, OCR and Word readers load only when a file is chosen.
 
 | File | What it holds |
 |---|---|
-| `src/main.ts` | The screen state machine and event handling. |
-| `src/screens.ts` | The markup for each screen. |
-| `src/content.ts`, `src/glossary.ts` | The synthetic content and the glossary. |
+| `src/main.ts` | The step state machine and event handling. |
+| `src/screens.ts` | The markup for each step. |
+| `src/content.ts`, `src/glossary.ts` | The sample letter, its difficult words, and word matching. |
+| `src/letter.ts` | The letter model; turning raw text into paragraphs and sentences. |
+| `src/extract.ts` | Reading PDFs, photos, Word and text files in the browser. |
+| `src/ai.ts`, `api/` | The call to the serverless function, and the function itself. |
 | `src/speech.ts`, `src/reading.ts` | Read aloud: the speech queue, and which lines are spoken. |
 | `src/sheet.ts`, `src/selection.ts` | The word-meaning sheet, and opening it from a text selection. |
-| `src/live.ts`, `api/` | Live mode: the browser side and the serverless functions. |
+| `src/errors.ts` | The plain-language error messages. |
 | `src/style.css` | Design tokens and all styles. |
-| `tests/` | Playwright tests. |
-| `PLAN.md` | The original build plan. |
+| `scripts/copy-ocr-assets.mjs` | Copies the OCR engine into the site before dev and build. |
+| `tests/` | Playwright tests, test letters, and the stand-in for OpenRouter. |
+| `PLAN.md` | The build plan. |

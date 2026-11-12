@@ -1,9 +1,27 @@
-node_modules
-dist
-test-results
-playwright-report
+# Secrets: API keys live in these files. Only the empty template is committed.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Hosting and tool settings for this machine (Vercel project and account ids, etc.)
 .vercel
 .netlify
-.env
-.env.local
+.claude
+
+# Dependencies and build output
+node_modules
+dist
+public/ocr
+
+# Test output
+test-results
+playwright-report
+blob-report
+
+# Logs, OS and editor files
+*.log
 .DS_Store
+.vscode
+.idea

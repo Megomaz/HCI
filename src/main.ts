@@ -2,21 +2,27 @@ import "@fontsource/atkinson-hyperlegible/400.css";
 import "@fontsource/atkinson-hyperlegible/700.css";
 import "./style.css";
 
-import { DEMO_CHECKLIST, ORIGINAL_SENTENCES, type Checklist } from "./content";
-import { explainLive, simplifyLive } from "./live";
-import { checklistLines, originalLines, type ReadLine } from "./reading";
+import { analyseLetter } from "./ai";
+import { STEP_NAMES } from "./content";
+import { LoadError, messageFor } from "./errors";
+import { extractText } from "./extract";
+import { findWord } from "./glossary";
+import { letterFromAi, plainText, sampleLetter, toParagraphs, type Letter } from "./letter";
+import { checklistLines, letterLines, simpleLines, type ReadLine } from "./reading";
 import {
   READING_LABELS,
   checklistScreen,
   doneScreen,
-  errorScreen,
+  loadingScreen,
   noticeHtml,
-  originalScreen,
   pauseButtonContent,
-  readingScreen,
-  renewalScreen,
-  simplifyingScreen,
+  simpleScreen,
+  stepHeader,
+  uploadErrorScreen,
+  uploadScreen,
+  wordsScreen,
   type ReadingStatus,
+  type Step,
 } from "./screens";
 import { watchSelection } from "./selection";
 import { createSheet } from "./sheet";
@@ -28,107 +34,88 @@ import {
   type Reader,
 } from "./speech";
 
-type Screen =
-  | "renewal"
-  | "simplifying"
-  | "error"
-  | "checklist"
-  | "original"
-  | "reading"
-  | "done";
+/** Where a letter comes from. Kept so "Try again" can repeat the right thing. */
+type Source = { kind: "sample" } | { kind: "file"; file: File } | { kind: "text"; text: string };
 
-interface Reading {
-  source: "checklist" | "original";
-  /** Screen to go back to when the user is done listening to the original. */
-  returnTo: Screen;
-  status: ReadingStatus;
-  lines: ReadLine[];
-}
+type Upload =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "error"; message: string; retry: Source | "choose" };
 
 interface State {
-  screen: Screen;
-  simplifyAttempts: number;
-  /** The text being simplified, one sentence per entry. */
-  original: readonly string[];
-  /** Live mode only: what the user typed into "Paste your own letter". */
-  letter: string;
-  checklist: Checklist;
+  step: Step;
+  /** The letter being worked on. In memory only: never saved, gone on reload. */
+  letter: Letter | null;
+  upload: Upload;
+  attempts: number;
+  /** Step 3: showing the original letter instead of the simple version. */
+  showOriginal: boolean;
+  /** Step 4: showing the "you have everything" confirmation. */
+  done: boolean;
+  explainWords: boolean;
   checked: Set<string>;
-  reading: Reading | null;
+  reading: { status: ReadingStatus; lines: ReadLine[] } | null;
 }
 
-// ---------- Modes ----------
+/** ?demoError=1 makes the first attempt to load a letter fail on purpose, for the video. */
+const demoError = new URLSearchParams(location.search).get("demoError") === "1";
 
-const params = new URLSearchParams(location.search);
-
-/** Live mode (?live=1) uses the real AI through /api. Everything else is demo mode. */
-const liveMode = params.get("live") === "1";
-
-/**
- * Demo mode: the first Simplify fails on purpose so the error state can be shown.
- * ?demoError=0 turns that off; in live mode it is off unless ?demoError=1 is given.
- */
-const demoError =
-  params.get("demoError") === null ? !liveMode : params.get("demoError") !== "0";
-
-/** How long the "Simplifying" feedback state shows in demo mode. Not a time limit. */
-const SIMPLIFY_MS = 2000;
+/** How long "Reading your letter…" shows for the sample letter. Not a time limit. */
+const SAMPLE_MS = 1500;
 
 const state: State = {
-  screen: "renewal",
-  simplifyAttempts: 0,
-  original: ORIGINAL_SENTENCES,
-  letter: "",
-  checklist: DEMO_CHECKLIST,
+  step: 1,
+  letter: null,
+  upload: { status: "idle" },
+  attempts: 0,
+  showOriginal: false,
+  done: false,
+  explainWords: true,
   checked: new Set(),
   reading: null,
 };
 
+const headerEl = document.querySelector<HTMLElement>("#header")!;
 const screenEl = document.querySelector<HTMLElement>("#screen")!;
 const announcerEl = document.querySelector<HTMLElement>("#announcer")!;
-const pageTitleEl = document.querySelector<HTMLElement>("#page-title")!;
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 let reader: Reader | null = null;
-/** Bumped on every screen change so a slow Simplify can't land on the wrong screen. */
-let simplifyRun = 0;
+/** Bumped whenever loading is started or abandoned, so a slow result can't land later. */
+let loadRun = 0;
 
 // ---------- Rendering ----------
 
-function render(): void {
-  screenEl.dataset.screen = state.screen;
-  switch (state.screen) {
-    case "renewal":
-      screenEl.innerHTML = renewalScreen(liveMode, state.letter);
-      break;
-    case "simplifying":
-      screenEl.innerHTML = simplifyingScreen();
-      break;
-    case "error":
-      screenEl.innerHTML = errorScreen(state.original);
-      break;
-    case "checklist":
-      screenEl.innerHTML = checklistScreen(state.checklist, state.checked);
-      break;
-    case "original":
-      screenEl.innerHTML = originalScreen(state.original);
-      break;
-    case "reading": {
-      const reading = state.reading!;
-      screenEl.innerHTML = readingScreen(
-        reading.source,
-        reading.status,
-        state.checklist,
-        state.checked,
-        state.original,
-        reading.lines.some((line) => line.lineId === "tip"),
-      );
-      break;
-    }
-    case "done":
-      screenEl.innerHTML = doneScreen();
-      break;
+function screenHtml(): string {
+  const reading = state.reading?.status ?? null;
+  if (state.step === 1 || !state.letter) {
+    if (state.upload.status === "loading") return loadingScreen();
+    if (state.upload.status === "error") return uploadErrorScreen(state.upload.message);
+    return uploadScreen(state.letter !== null);
   }
+  if (state.step === 2) return wordsScreen(state.letter, reading, state.explainWords);
+  if (state.step === 3) {
+    return simpleScreen(state.letter, state.showOriginal, reading, state.explainWords);
+  }
+  if (state.done) return doneScreen();
+  return checklistScreen(state.letter, state.checked, reading, state.explainWords);
+}
+
+type FocusTarget = "heading" | "sub-heading" | string;
+
+/** Draw the current state, then put keyboard focus somewhere sensible. */
+function render(focus: FocusTarget): void {
+  headerEl.innerHTML = stepHeader(state.step);
+  screenEl.innerHTML = screenHtml();
+  document.title = `Step ${state.step} of 4: ${STEP_NAMES[state.step - 1]} – Translate`;
+
+  const target =
+    focus === "heading"
+      ? headerEl.querySelector<HTMLElement>("#page-title")
+      : focus === "sub-heading"
+        ? screenEl.querySelector<HTMLElement>("[data-focus]")
+        : screenEl.querySelector<HTMLElement>(focus);
+  (target ?? headerEl.querySelector<HTMLElement>("#page-title"))?.focus({ preventScroll: true });
 }
 
 function announce(message: string): void {
@@ -151,91 +138,150 @@ function notify(message: string): void {
   announce(message);
 }
 
-/** Change screen, then move focus to the new screen's heading. Leaving a screen stops speech. */
-function go(screen: Screen): void {
-  simplifyRun += 1;
+function stopReading(): void {
   stopSpeech();
   reader = null;
-  state.screen = screen;
-  if (screen !== "reading") state.reading = null;
-  render();
+  state.reading = null;
+}
+
+/** Go to a step and move focus to its heading. Leaving a step stops any speech. */
+function go(step: Step): void {
+  if (step > 1 && !state.letter) step = 1;
+  loadRun += 1;
+  stopReading();
+  state.step = step;
+  state.showOriginal = false;
+  state.done = false;
+  if (state.upload.status === "loading") state.upload = { status: "idle" };
+  render("heading");
   window.scrollTo(0, 0);
-  const target = screenEl.querySelector<HTMLElement>("[data-focus]") ?? pageTitleEl;
-  target.focus({ preventScroll: true });
-  announce(
-    screen === "simplifying" ? "Making this easier to read. This takes a few seconds." : "",
-  );
+  announce("");
 }
 
-// ---------- Simplify ----------
-
-function toSentences(text: string): string[] {
-  const clean = text.replace(/\s+/g, " ").trim();
-  return (clean.match(/[^.!?]+[.!?]+["')\]]*|[^.!?]+$/g) ?? [])
-    .map((sentence) => sentence.trim())
-    .filter(Boolean);
-}
-
-/** Live mode: use the pasted letter, if there is one, as the text to work on. */
-function useLetterIfPasted(): void {
-  const field = screenEl.querySelector<HTMLTextAreaElement>("#letter");
-  if (!field) return;
-  state.letter = field.value;
-  const sentences = toSentences(field.value);
-  state.original = sentences.length > 0 ? sentences : ORIGINAL_SENTENCES;
-}
+// ---------- Step 1: loading a letter ----------
 
 const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
-async function simplify(): Promise<void> {
-  useLetterIfPasted();
-  state.simplifyAttempts += 1;
-  const failOnPurpose = demoError && state.simplifyAttempts === 1;
-
-  go("simplifying");
-  const run = simplifyRun;
-
-  let result: Checklist | null = null;
+async function buildLetter(source: Source, failOnPurpose: boolean): Promise<Letter> {
+  if (source.kind === "sample") {
+    await wait(SAMPLE_MS);
+    if (failOnPurpose) throw new LoadError("ai");
+    return sampleLetter();
+  }
+  // Clean the text up once, so what is shown in Step 2 is exactly what the AI was given.
+  const raw = source.kind === "file" ? await extractText(source.file) : source.text;
+  const text = plainText(toParagraphs(raw));
   try {
-    if (failOnPurpose || !liveMode) await wait(SIMPLIFY_MS);
-    if (!failOnPurpose) {
-      result = liveMode ? await simplifyLive(state.original.join(" ")) : DEMO_CHECKLIST;
+    if (failOnPurpose) {
+      await wait(SAMPLE_MS);
+      throw new LoadError("ai");
     }
-  } catch {
-    result = null;
+    return letterFromAi(text, await analyseLetter(text));
+  } catch (error) {
+    // The words were read fine, so "Try again" should not need the file to be read again.
+    throw Object.assign(error instanceof LoadError ? error : new LoadError("ai"), { text });
   }
+}
 
-  if (run !== simplifyRun) return; // the user has moved on
-  if (!result) {
-    go("error");
-    return;
+async function load(source: Source): Promise<void> {
+  state.attempts += 1;
+  const failOnPurpose = demoError && state.attempts === 1;
+
+  stopReading();
+  state.step = 1;
+  state.upload = { status: "loading" };
+  const run = ++loadRun;
+  render("sub-heading");
+  window.scrollTo(0, 0);
+  announce("Reading your letter. This can take a little while.");
+
+  try {
+    const letter = await buildLetter(source, failOnPurpose);
+    if (run !== loadRun) return; // the user stopped or moved on
+    state.letter = letter;
+    state.checked.clear();
+    state.upload = { status: "idle" };
+    go(2);
+  } catch (error) {
+    if (run !== loadRun) return;
+    const text = (error as { text?: string }).text;
+    // If the words were read but simplifying failed, retry with the same words.
+    // If the file itself was the problem, "Try again" asks for another file.
+    const retry: Source | "choose" =
+      source.kind === "sample" ? source : text ? { kind: "text", text } : "choose";
+    state.upload = { status: "error", message: messageFor(error), retry };
+    render("sub-heading");
+    announce("");
   }
-  state.checklist = result;
+}
+
+function chooseFile(): void {
+  screenEl.querySelector<HTMLInputElement>("#file-input")?.click();
+}
+
+function tryAgain(): void {
+  if (state.upload.status !== "error") return;
+  const { retry } = state.upload;
+  if (retry === "choose") chooseFile();
+  else void load(retry);
+}
+
+function stopLoading(): void {
+  loadRun += 1;
+  state.upload = { status: "idle" };
+  render("heading");
+  announce("");
+}
+
+function startAgain(): void {
+  state.letter = null;
   state.checked.clear();
-  go("checklist");
+  state.upload = { status: "idle" };
+  go(1);
 }
 
 // ---------- Read aloud ----------
 
+const READ_BUTTON = '[data-action="read-aloud"]';
+
+/**
+ * Whether the page should scroll to keep up with the line being read.
+ * It follows only while the reader has the spoken line fully in view. Once they
+ * scroll away (down to the buttons, say), the page stays exactly where they put
+ * it; scrolling back to the highlighted line picks the following up again.
+ */
+let followReading = true;
+
+function isFullyOnScreen(el: Element): boolean {
+  const box = el.getBoundingClientRect();
+  const slack = 2;
+  if (box.height > window.innerHeight) return box.top >= -slack && box.top < window.innerHeight;
+  return box.top >= -slack && box.bottom <= window.innerHeight + slack;
+}
+
 function highlight(line: ReadLine | undefined): void {
-  for (const el of screenEl.querySelectorAll(".speaking")) el.classList.remove("speaking");
+  const outgoing = [...screenEl.querySelectorAll(".speaking")];
+  if (outgoing.length > 0) followReading = outgoing.some(isFullyOnScreen);
+  for (const el of outgoing) el.classList.remove("speaking");
   if (!line?.lineId) return;
+
   const lineEl = screenEl.querySelector<HTMLElement>(`[data-line="${line.lineId}"]`);
   const termEl = line.termId
     ? screenEl.querySelector<HTMLElement>(`[data-term-id="${line.termId}"]`)
     : null;
   lineEl?.classList.add("speaking");
   termEl?.classList.add("speaking");
-  (termEl ?? lineEl)?.scrollIntoView({
-    block: "nearest",
-    behavior: reducedMotion.matches ? "auto" : "smooth",
-  });
+  if (followReading) {
+    (termEl ?? lineEl)?.scrollIntoView({
+      block: "nearest",
+      behavior: reducedMotion.matches ? "auto" : "smooth",
+    });
+  }
 }
 
 function setReadingStatus(status: ReadingStatus): void {
-  const reading = state.reading;
-  if (!reading) return;
-  reading.status = status;
+  if (!state.reading) return;
+  state.reading.status = status;
   // Update in place so keyboard focus stays where it is.
   screenEl.querySelector("#pause-button")!.innerHTML = pauseButtonContent(status);
   screenEl.querySelector("#reading-status")!.classList.toggle("stopped", status !== "playing");
@@ -243,17 +289,25 @@ function setReadingStatus(status: ReadingStatus): void {
   if (status === "finished" || status === "error") highlight(undefined);
 }
 
-function startReading(source: Reading["source"]): void {
+function startReading(): void {
+  const letter = state.letter;
+  if (!letter) return;
   if (!speechAvailable()) {
     notify(NO_SPEECH_MESSAGE);
     return;
   }
-  if (source === "original") useLetterIfPasted();
 
   const lines =
-    source === "checklist" ? checklistLines(state.checklist) : originalLines(state.original);
-  state.reading = { source, returnTo: state.screen, status: "playing", lines };
-  go("reading");
+    state.step === 2
+      ? letterLines(letter, state.explainWords)
+      : state.step === 3
+        ? simpleLines(letter, state.explainWords)
+        : checklistLines(letter, state.explainWords);
+
+  state.reading = { status: "playing", lines };
+  render("#pause-button");
+  window.scrollTo(0, 0);
+  followReading = true;
 
   reader = createReader(
     lines.map((line) => line.text),
@@ -267,12 +321,21 @@ function startReading(source: Reading["source"]): void {
   reader.start();
 }
 
+/** Reading is about to start again from the top: follow it only if the top is in view. */
+function prepareRestart(): void {
+  highlight(undefined);
+  const first = state.reading?.lines.find((line) => line.lineId);
+  const firstEl = first ? screenEl.querySelector(`[data-line="${first.lineId}"]`) : null;
+  followReading = firstEl ? isFullyOnScreen(firstEl) : false;
+}
+
 function togglePause(): void {
   if (!state.reading || !reader) return;
   if (state.reading.status === "playing") {
     reader.pause();
     setReadingStatus("paused");
   } else {
+    if (state.reading.status === "finished") prepareRestart();
     reader.resume();
     setReadingStatus("playing");
   }
@@ -280,21 +343,26 @@ function togglePause(): void {
 
 function playAgain(): void {
   if (!reader) return;
-  highlight(undefined);
+  prepareRestart();
   reader.start();
   setReadingStatus("playing");
 }
 
 function doneListening(): void {
-  const reading = state.reading;
-  if (!reading) return;
-  go(reading.source === "checklist" ? "done" : reading.returnTo);
+  stopReading();
+  if (state.step === 4) {
+    state.done = true;
+    render("sub-heading");
+  } else {
+    render(READ_BUTTON);
+  }
+  window.scrollTo(0, 0);
 }
 
 // ---------- Word meanings ----------
 
 const sheet = createSheet({
-  explain: liveMode ? (word) => explainLive(word, state.original.join(" ")) : undefined,
+  lookup: (word) => (state.letter ? findWord(state.letter.words, word) : undefined),
   onOpen: () => {
     // Opening a meaning while the page is being read aloud pauses the reading.
     if (state.reading?.status === "playing" && reader) {
@@ -307,21 +375,34 @@ const sheet = createSheet({
 watchSelection(
   screenEl,
   (word) => sheet.open(word, null),
-  () => sheet.isOpen(),
+  () => sheet.isOpen() || state.step === 1,
 );
 
 // ---------- Events ----------
 
 const actions: Record<string, () => void> = {
-  simplify: () => void simplify(),
-  "read-original": () => startReading("original"),
-  "read-checklist": () => startReading("checklist"),
-  "see-original": () => go("original"),
-  "back-to-simple": () => go("checklist"),
+  "choose-letter": chooseFile,
+  "use-sample": () => void load({ kind: "sample" }),
+  "try-again": tryAgain,
+  "stop-loading": stopLoading,
+  "go-1": () => go(1),
+  "go-2": () => go(2),
+  "go-3": () => go(3),
+  "go-4": () => go(4),
+  "toggle-original": () => {
+    state.showOriginal = !state.showOriginal;
+    render('[data-action="toggle-original"]');
+    window.scrollTo(0, 0);
+  },
+  "read-aloud": startReading,
   "toggle-pause": togglePause,
   "play-again": playAgain,
   "done-listening": doneListening,
-  "back-to-checklist": () => go("checklist"),
+  "back-to-checklist": () => {
+    state.done = false;
+    render("heading");
+  },
+  "start-again": startAgain,
 };
 
 function toggleRow(row: HTMLElement, clickedBox: boolean): void {
@@ -353,4 +434,16 @@ screenEl.addEventListener("click", (event) => {
   if (row) toggleRow(row, target instanceof HTMLInputElement);
 });
 
-render();
+screenEl.addEventListener("change", (event) => {
+  const target = event.target as HTMLInputElement;
+  if (target.id === "explain-words") {
+    state.explainWords = target.checked;
+  } else if (target.id === "file-input") {
+    const file = target.files?.[0];
+    target.value = ""; // so choosing the same file again still counts as a change
+    if (file) void load({ kind: "file", file });
+  }
+});
+
+headerEl.innerHTML = stepHeader(state.step);
+screenEl.innerHTML = screenHtml();

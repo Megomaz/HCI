@@ -4,7 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "ocr-assets": "node scripts/copy-ocr-assets.mjs",
+    "predev": "npm run ocr-assets",
     "dev": "vite",
+    "prebuild": "npm run ocr-assets",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "playwright test"
@@ -17,8 +20,11 @@
     "vite": "^8.3.8"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^1.8.0",
     "@fontsource/atkinson-hyperlegible": "^5.3.0",
+    "@tesseract.js-data/eng": "^1.0.0",
+    "mammoth": "^1.13.0",
+    "pdfjs-dist": "^6.5.438",
+    "tesseract.js": "^7.0.0",
     "zod": "^4.6.7"
   }
 }

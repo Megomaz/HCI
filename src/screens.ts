@@ -1,7 +1,10 @@
-import { ORIGINAL_SENTENCES, SECTIONS, type Checklist } from "./content";
-import { splitTerms } from "./glossary";
+import { SECTIONS, STEP_NAMES } from "./content";
+import { hasTerms, splitTerms, type DifficultWord } from "./glossary";
 import { icon, type IconName } from "./icons";
-import { TIP_TEXT, sentenceLineId, termIdFor } from "./reading";
+import type { Letter } from "./letter";
+import { TIP_TEXT, sentenceLineId, simpleLineId, termIdFor } from "./reading";
+
+export type Step = 1 | 2 | 3 | 4;
 
 export function esc(text: string): string {
   return text
@@ -12,17 +15,16 @@ export function esc(text: string): string {
 }
 
 /**
- * Text with each difficult word turned into a real button that Tab can reach.
- * Enter, Space or a tap opens the meaning.
+ * Text with each difficult word turned into a real button inside the sentence,
+ * so Tab reaches it in reading order and Enter, Space or a tap opens the meaning.
  */
-function rich(text: string, lineId: string): string {
+function rich(text: string, lineId: string, words: readonly DifficultWord[]): string {
   let n = 0;
-  return splitTerms(text)
+  return splitTerms(text, words)
     .map((part) => {
-      if (!part.isTerm) return esc(part.text);
-      const word = esc(part.text);
-      const key = esc(part.text.toLowerCase().replace(/\s+/g, " "));
-      return `<button type="button" class="term" data-term="${key}" data-term-id="${termIdFor(lineId, n++)}" aria-label="${word}, show meaning"><span>${word}</span></button>`;
+      if (!part.word) return esc(part.text);
+      const shown = esc(part.text);
+      return `<button type="button" class="term" data-term="${esc(part.word.term)}" data-term-id="${termIdFor(lineId, n++)}" aria-label="${shown}, show meaning"><span>${shown}</span></button>`;
     })
     .join("");
 }
@@ -33,109 +35,29 @@ function button(action: string, label: string, iconName: IconName, style: Button
   return `<button type="button" class="btn btn-${style}" data-action="${action}">${icon(iconName)}<span>${esc(label)}</span></button>`;
 }
 
-function heading(text: string): string {
+function subHeading(text: string): string {
   return `<h2 class="screen-heading" tabindex="-1" data-focus>${esc(text)}</h2>`;
 }
 
 function tip(): string {
-  return `<p class="tip" data-line="tip">${icon("info")}<span>${esc(TIP_TEXT)}</span></p>`;
+  return `<p class="tip" id="tip" data-line="tip">${icon("info")}<span>${esc(TIP_TEXT)}</span></p>`;
 }
 
-function originalBox(sentences: readonly string[]): string {
-  const spans = sentences
-    .map((sentence, i) => {
-      const lineId = sentenceLineId(i);
-      return `<span class="sentence" data-line="${lineId}">${rich(sentence, lineId)}</span>`;
-    })
-    .join(" ");
-  return `<div class="soft-box"><p class="original">${spans}</p></div>`;
-}
+// ---------- Header (same on every step) ----------
 
-function checklist(list: Checklist, checked: ReadonlySet<string>): string {
-  return SECTIONS.filter(({ key }) => list[key].length > 0)
-    .map(({ key, title }) => {
-      const rows = list[key]
-        .map((text, i) => {
-          const id = `${key}-${i}`;
-          const isChecked = checked.has(id);
-          return `<li class="check-row${isChecked ? " checked" : ""}" data-row="${id}" data-line="${id}">
-            <input type="checkbox" id="cb-${id}" aria-label="${esc(text)}"${isChecked ? " checked" : ""} />
-            <span class="check-text">${rich(text, id)}</span>
-          </li>`;
-        })
-        .join("");
-      return `<section class="check-section" aria-labelledby="sec-${key}">
-        <h3 id="sec-${key}"><span data-line="sec-${key}">${esc(title)}</span></h3>
-        <ul class="check-list">${rows}</ul>
-      </section>`;
-    })
+export function stepHeader(step: Step): string {
+  const segments = [1, 2, 3, 4]
+    .map((n) => `<span${n <= step ? ' class="on"' : ""}></span>`)
     .join("");
-}
-
-// ---------- Screens ----------
-
-export function renewalScreen(liveMode: boolean, letter: string): string {
-  const letterField = liveMode
-    ? `<div class="field">
-        <label for="letter">Paste your own letter</label>
-        <p class="hint" id="letter-hint">Leave this empty to use the text above.</p>
-        <textarea id="letter" rows="5" maxlength="4000" aria-describedby="letter-hint">${esc(letter)}</textarea>
-      </div>`
-    : "";
   return `
-    ${tip()}
-    ${originalBox(ORIGINAL_SENTENCES)}
-    ${letterField}
-    <div class="actions">
-      ${button("simplify", "Simplify this", "simplify", "primary")}
-      ${button("read-original", "Read the original aloud", "speaker", "secondary")}
-    </div>`;
+    <div class="segments" aria-hidden="true">${segments}</div>
+    <h1 id="page-title" tabindex="-1">
+      <span class="step-count">Step ${step} of 4:</span>
+      <span class="step-name">${esc(STEP_NAMES[step - 1])}</span>
+    </h1>`;
 }
 
-export function simplifyingScreen(): string {
-  return `
-    <div class="card status-card">
-      ${heading("Making this easier to read…")}
-      <div class="loader" aria-hidden="true"><span></span></div>
-      <p>This takes a few seconds.</p>
-    </div>`;
-}
-
-export function errorScreen(original: readonly string[]): string {
-  return `
-    <div class="card error-card" role="alert">
-      <div class="error-title">
-        ${icon("warning", 28)}
-        ${heading("Sorry, we couldn't simplify this right now")}
-      </div>
-      <p>Your page is still here. Nothing is lost.</p>
-      <div class="actions">
-        ${button("simplify", "Try again", "retry", "primary")}
-        ${button("read-original", "Read the original aloud", "speaker", "secondary")}
-      </div>
-    </div>
-    ${originalBox(original)}`;
-}
-
-export function checklistScreen(list: Checklist, checked: ReadonlySet<string>): string {
-  return `
-    ${heading("What you need to send")}
-    ${checklist(list, checked)}
-    <div class="actions">
-      ${button("read-checklist", "Read checklist aloud", "speaker", "primary")}
-      ${button("see-original", "See the original text", "document", "link")}
-    </div>`;
-}
-
-export function originalScreen(original: readonly string[]): string {
-  return `
-    ${heading("The original text")}
-    ${originalBox(original)}
-    <div class="actions">
-      ${button("back-to-simple", "Back to simple version", "back", "primary")}
-      ${button("read-original", "Read the original aloud", "speaker", "secondary")}
-    </div>`;
-}
+// ---------- Read aloud pieces shared by Steps 2, 3 and 4 ----------
 
 export type ReadingStatus = "playing" | "paused" | "finished" | "error";
 
@@ -152,25 +74,17 @@ export function pauseButtonContent(status: ReadingStatus): string {
     : `${icon("play")}<span>Play</span>`;
 }
 
-export function readingScreen(
-  source: "checklist" | "original",
-  status: ReadingStatus,
-  list: Checklist,
-  checked: ReadonlySet<string>,
-  original: readonly string[],
-  showTip: boolean,
-): string {
-  const body =
-    source === "checklist"
-      ? checklist(list, checked)
-      : `${showTip ? tip() : ""}${originalBox(original)}`;
+function readingStatus(status: ReadingStatus | null): string {
+  if (!status) return "";
   return `
-    ${heading(source === "checklist" ? "What you need to send" : "The original text")}
     <p class="reading-status${status === "playing" ? "" : " stopped"}" id="reading-status">
       <span class="sound-bar" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
       <span id="reading-label" aria-live="polite">${esc(READING_LABELS[status])}</span>
-    </p>
-    ${body}
+    </p>`;
+}
+
+function readingControls(status: ReadingStatus): string {
+  return `
     <div class="actions">
       <button type="button" class="btn btn-primary" data-action="toggle-pause" id="pause-button">${pauseButtonContent(status)}</button>
       ${button("play-again", "Play again", "replay", "secondary")}
@@ -178,11 +92,194 @@ export function readingScreen(
     </div>`;
 }
 
+function explainToggle(show: boolean, on: boolean): string {
+  if (!show) return "";
+  return `
+    <label class="option-row" for="explain-words">
+      <input type="checkbox" id="explain-words"${on ? " checked" : ""} />
+      <span>Explain words while reading</span>
+    </label>`;
+}
+
+// ---------- Text blocks ----------
+
+function originalText(letter: Letter): string {
+  let index = 0;
+  const paragraphs = letter.paragraphs
+    .map((sentences) => {
+      const spans = sentences
+        .map((sentence) => {
+          const lineId = sentenceLineId(index++);
+          return `<span class="sentence" data-line="${lineId}">${rich(sentence, lineId, letter.words)}</span>`;
+        })
+        .join(" ");
+      return `<p>${spans}</p>`;
+    })
+    .join("");
+  return `<div class="soft-box letter-text" role="group" aria-label="Your letter" aria-describedby="tip">${paragraphs}</div>`;
+}
+
+function simpleText(letter: Letter): string {
+  const lines = letter.simple
+    .map((sentence, i) => {
+      const lineId = simpleLineId(i);
+      return `<p><span class="sentence" data-line="${lineId}">${rich(sentence, lineId, letter.words)}</span></p>`;
+    })
+    .join("");
+  return `<div class="soft-box letter-text simple-text" role="group" aria-label="Simple version of your letter" aria-describedby="tip">${lines}</div>`;
+}
+
+function checklist(letter: Letter, checked: ReadonlySet<string>): string {
+  const sections = SECTIONS.filter(({ key }) => letter.checklist[key].length > 0)
+    .map(({ key, title }) => {
+      const rows = letter.checklist[key]
+        .map((text, i) => {
+          const id = `${key}-${i}`;
+          const isChecked = checked.has(id);
+          return `<li class="check-row${isChecked ? " checked" : ""}" data-row="${id}" data-line="${id}">
+            <input type="checkbox" id="cb-${id}" aria-label="${esc(text)}"${isChecked ? " checked" : ""} />
+            <span class="check-text">${rich(text, id, letter.words)}</span>
+          </li>`;
+        })
+        .join("");
+      return `<section class="check-section" aria-labelledby="sec-${key}">
+        <h2 class="section-title" id="sec-${key}"><span data-line="sec-${key}">${esc(title)}</span></h2>
+        <ul class="check-list">${rows}</ul>
+      </section>`;
+    })
+    .join("");
+  return sections || `<p class="soft-box">This letter does not ask you to send anything.</p>`;
+}
+
+// ---------- Step 1: Upload your letter ----------
+
+export const FILE_ACCEPT = "application/pdf,image/*,.txt,.docx";
+
+export function uploadScreen(hasLetter: boolean): string {
+  return `
+    <p class="lead">Take a photo of your letter, or choose a file. We will help you understand it.</p>
+    <p class="tip">${icon("info")}<span>This is a prototype. Use the sample letter, or a letter with your personal details removed.</span></p>
+    <input type="file" id="file-input" accept="${FILE_ACCEPT}" hidden />
+    <div class="actions">
+      ${hasLetter ? button("go-2", "Next: understand the words", "next", "primary") : ""}
+      ${button("choose-letter", "Choose a letter", "upload", hasLetter ? "secondary" : "primary")}
+      ${button("use-sample", "Use the sample letter", "document", "secondary")}
+    </div>`;
+}
+
+export function loadingScreen(): string {
+  return `
+    <div class="card status-card">
+      ${subHeading("Reading your letter…")}
+      <div class="loader" aria-hidden="true"><span></span></div>
+      <p>This can take a little while, especially for a photo.</p>
+      <div class="actions">
+        ${button("stop-loading", "Stop and go back", "close", "secondary")}
+      </div>
+    </div>`;
+}
+
+export function uploadErrorScreen(message: string): string {
+  return `
+    <div class="card error-card" role="alert">
+      <div class="error-title">
+        ${icon("warning", 28)}
+        ${subHeading("Sorry, that didn't work")}
+      </div>
+      <p>${esc(message)}</p>
+      <input type="file" id="file-input" accept="${FILE_ACCEPT}" hidden />
+      <div class="actions">
+        ${button("try-again", "Try again", "retry", "primary")}
+        ${button("use-sample", "Use the sample letter", "document", "secondary")}
+      </div>
+    </div>`;
+}
+
+// ---------- Step 2: Understand the words ----------
+
+export function wordsScreen(letter: Letter, reading: ReadingStatus | null, explain: boolean): string {
+  const anyWords = hasTerms(letter.paragraphs.flat(), letter.words);
+  const actions = reading
+    ? readingControls(reading)
+    : `<div class="actions">
+        ${button("read-aloud", "Read the letter aloud", "speaker", "secondary")}
+        ${explainToggle(anyWords, explain)}
+        ${button("go-3", "Next: simple version", "next", "primary")}
+        ${button("go-4", "Skip to checklist", "skip", "secondary")}
+        ${button("go-1", "Back: upload your letter", "back", "link")}
+      </div>`;
+  return `
+    ${readingStatus(reading)}
+    ${tip()}
+    ${originalText(letter)}
+    ${actions}`;
+}
+
+// ---------- Step 3: Simple version ----------
+
+export function simpleScreen(
+  letter: Letter,
+  showOriginal: boolean,
+  reading: ReadingStatus | null,
+  explain: boolean,
+): string {
+  if (showOriginal) {
+    return `
+      ${tip()}
+      <h2 class="screen-heading">The original letter</h2>
+      ${originalText(letter)}
+      <div class="actions">
+        ${button("toggle-original", "Back to simple version", "back", "secondary")}
+        ${button("go-4", "Next: checklist", "next", "primary")}
+        ${button("go-2", "Back: understand the words", "back", "link")}
+      </div>`;
+  }
+  const anyWords = hasTerms(letter.simple, letter.words);
+  const actions = reading
+    ? readingControls(reading)
+    : `<div class="actions">
+        ${button("read-aloud", "Read simple version aloud", "speaker", "secondary")}
+        ${explainToggle(anyWords, explain)}
+        ${button("go-4", "Next: checklist", "next", "primary")}
+        ${button("toggle-original", "See the original letter", "document", "secondary")}
+        ${button("go-2", "Back: understand the words", "back", "link")}
+      </div>`;
+  return `
+    ${readingStatus(reading)}
+    ${tip()}
+    ${simpleText(letter)}
+    <p class="small-note">Not sure? Check it against the original letter.</p>
+    ${actions}`;
+}
+
+// ---------- Step 4: Your checklist ----------
+
+export function checklistScreen(
+  letter: Letter,
+  checked: ReadonlySet<string>,
+  reading: ReadingStatus | null,
+  explain: boolean,
+): string {
+  const items = SECTIONS.flatMap(({ key }) => letter.checklist[key]);
+  const actions = reading
+    ? readingControls(reading)
+    : `<div class="actions">
+        ${items.length > 0 ? button("read-aloud", "Read checklist aloud", "speaker", "primary") : ""}
+        ${explainToggle(hasTerms(items, letter.words), explain)}
+        ${button("start-again", "Start again with another letter", "retry", "secondary")}
+        ${button("go-3", "Back: simple version", "back", "link")}
+      </div>`;
+  return `
+    ${readingStatus(reading)}
+    ${checklist(letter, checked)}
+    ${actions}`;
+}
+
 export function doneScreen(): string {
   return `
     <div class="card done-card">
       <span class="done-icon">${icon("check", 32)}</span>
-      ${heading("You have everything you need to know.")}
+      ${subHeading("You have everything you need to know.")}
       <p>Gather these documents, then continue.</p>
       <div class="actions">
         ${button("back-to-checklist", "Back to checklist", "back", "primary")}

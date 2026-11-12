@@ -2,10 +2,19 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import {
   ORIGINAL_WORDS,
+  SAMPLE_ITEMS,
   endSpokenLine,
   expectNoSidewaysScroll,
+  focusedName,
   goToChecklist,
+  goToSimple,
   installFakeSpeech,
+  stepHeading,
+  tabOrder,
+  tabTo,
+  textLetter,
+  uniqueRef,
+  useSample,
 } from "./helpers";
 
 test.beforeEach(async ({ page }) => {
@@ -20,129 +29,125 @@ async function expectNoAxeViolations(page: Page, screen: string): Promise<void> 
   expect(summary, `axe violations on ${screen}`).toEqual([]);
 }
 
-/** Name of the element that has keyboard focus, as a screen reader would say it. */
-async function focusedName(page: Page): Promise<string> {
-  return page.evaluate(() => {
-    const el = document.activeElement;
-    if (!el || el === document.body) return "";
-    return (el.getAttribute("aria-label") ?? el.textContent ?? "").replace(/\s+/g, " ").trim();
-  });
-}
-
-/** Press Tab until the named control has focus. Fails if Tab alone can't get there. */
-async function tabTo(page: Page, name: string): Promise<void> {
-  for (let presses = 0; presses < 40; presses++) {
-    await page.keyboard.press("Tab");
-    if ((await focusedName(page)) === name) return;
-  }
-  throw new Error(`Could not reach "${name}" with the Tab key`);
-}
-
-/** Every stop the Tab key makes on the current screen, in order. */
-async function tabOrder(page: Page): Promise<string[]> {
-  const names: string[] = [];
-  for (let presses = 0; presses < 40; presses++) {
-    await page.keyboard.press("Tab");
-    const name = await focusedName(page);
-    if (!name || names.includes(name)) break;
-    names.push(name);
-  }
-  return names;
-}
-
-// ---------- axe on every screen ----------
+// ---------- axe on every step and state ----------
 
 test.describe("zero axe violations", () => {
-  test("renewal page", async ({ page }) => {
+  test("Step 1: upload", async ({ page }) => {
     await page.goto("/");
-    await expectNoAxeViolations(page, "renewal");
+    await expectNoAxeViolations(page, "step 1");
   });
 
-  test("simplifying", async ({ page }) => {
-    // Live mode with a held request keeps the Simplifying screen up for as long as the scan needs.
+  test("Step 1: reading your letter", async ({ page }) => {
+    // A held request keeps "Reading your letter…" up for as long as the scan needs.
     let release = () => {};
     const held = new Promise<void>((resolve) => (release = resolve));
     await page.route("**/api/simplify", async (route) => {
       await held;
-      await route.fulfill({ status: 503, json: {} });
+      await route.abort();
     });
-    await page.goto("/?live=1");
-    await page.getByRole("button", { name: "Simplify this" }).click();
-    await expect(page.getByRole("heading", { name: "Making this easier to read…" })).toBeFocused();
+    await page.goto("/");
+    await page.locator("#file-input").setInputFiles(textLetter(uniqueRef()));
+    await expect(page.getByRole("heading", { name: "Reading your letter…" })).toBeFocused();
     await expect(page.locator("#announcer")).not.toBeEmpty();
-    await expectNoAxeViolations(page, "simplifying");
+    await expectNoAxeViolations(page, "step 1 loading");
     release();
     await expect(page.getByRole("alert")).toBeVisible();
   });
 
-  test("error state", async ({ page }) => {
-    await page.goto("/");
-    await page.getByRole("button", { name: "Simplify this" }).click();
+  test("Step 1: error", async ({ page }) => {
+    await page.goto("/?demoError=1");
+    await page.getByRole("button", { name: "Use the sample letter" }).click();
     await expect(page.getByRole("alert")).toBeVisible();
-    await expectNoAxeViolations(page, "error");
+    await expectNoAxeViolations(page, "step 1 error");
   });
 
-  test("checklist, with a row ticked", async ({ page }) => {
-    await goToChecklist(page);
-    await page.getByRole("checkbox").first().check();
-    await expectNoAxeViolations(page, "checklist");
+  test("Step 1: with a letter already loaded", async ({ page }) => {
+    await useSample(page);
+    await page.getByRole("button", { name: "Back: upload your letter" }).click();
+    await expect(page.getByRole("button", { name: "Next: understand the words" })).toBeVisible();
+    await expectNoAxeViolations(page, "step 1 with letter");
   });
 
-  test("original text", async ({ page }) => {
-    await goToChecklist(page);
-    await page.getByRole("button", { name: "See the original text" }).click();
-    await expect(page.getByRole("heading", { name: "The original text" })).toBeFocused();
-    await expectNoAxeViolations(page, "original");
+  test("Step 2: understand the words", async ({ page }) => {
+    await useSample(page);
+    await expectNoAxeViolations(page, "step 2");
+    await page.keyboard.press("Tab"); // a focused word
+    await expectNoAxeViolations(page, "step 2 with a word focused");
   });
 
-  test("reading aloud: a line, a word meaning, paused and finished", async ({ page }) => {
-    await installFakeSpeech(page, { manual: true });
-    await goToChecklist(page);
-    await page.getByRole("button", { name: "Read checklist aloud" }).click();
-
-    await endSpokenLine(page, 2); // past "What you need to send." and "Must have."
-    await expect(page.locator('[data-line="mustHave-0"]')).toHaveClass(/speaking/);
-    await expectNoAxeViolations(page, "reading (line highlighted)");
-
-    await endSpokenLine(page);
-    await expect(page.locator('[data-term-id="mustHave-0-t0"]')).toHaveClass(/speaking/);
-    await expectNoAxeViolations(page, "reading (word highlighted)");
-
-    await page.getByRole("button", { name: "Pause", exact: true }).click();
-    await expectNoAxeViolations(page, "reading (paused)");
-    await page.getByRole("button", { name: "Play", exact: true }).click();
-
-    await endSpokenLine(page, 6);
-    await expect(page.getByText("Finished reading")).toBeVisible();
-    await expectNoAxeViolations(page, "reading (finished)");
-  });
-
-  test("reading the original aloud, with the tip highlighted", async ({ page }) => {
-    await installFakeSpeech(page, { manual: true });
+  test("Step 2: an uploaded letter", async ({ page }) => {
     await page.goto("/");
-    await page.getByRole("button", { name: "Read the original aloud" }).click();
+    await page.locator("#file-input").setInputFiles(textLetter(uniqueRef()));
+    await expect(stepHeading(page, 2)).toBeFocused();
+    await expectNoAxeViolations(page, "step 2 (uploaded letter)");
+  });
+
+  test("Step 2: reading aloud (tip, sentence, word meaning, paused, finished)", async ({ page }) => {
+    await installFakeSpeech(page, { manual: true });
+    await useSample(page);
+    await page.getByRole("button", { name: "Read the letter aloud" }).click();
     await expect(page.locator('.tip[data-line="tip"]')).toHaveClass(/speaking/);
-    await expectNoAxeViolations(page, "reading original (tip)");
+    await expectNoAxeViolations(page, "step 2 reading (tip)");
+
     await endSpokenLine(page);
     await expect(page.locator('.sentence[data-line="s0"]')).toHaveClass(/speaking/);
-    await expectNoAxeViolations(page, "reading original (sentence)");
+    await expectNoAxeViolations(page, "step 2 reading (sentence)");
+
     await endSpokenLine(page);
     await expect(page.locator('[data-term-id="s0-t0"]')).toHaveClass(/speaking/);
-    await expectNoAxeViolations(page, "reading original (word)");
+    await expectNoAxeViolations(page, "step 2 reading (word)");
+
+    await page.getByRole("button", { name: "Pause", exact: true }).click();
+    await expectNoAxeViolations(page, "step 2 reading (paused)");
+    await page.getByRole("button", { name: "Play", exact: true }).click();
+
+    await endSpokenLine(page, 9);
+    await expect(page.getByText("Finished reading")).toBeVisible();
+    await expectNoAxeViolations(page, "step 2 reading (finished)");
   });
 
-  test("done listening", async ({ page }) => {
+  test("Step 3: simple version, and the original letter", async ({ page }) => {
+    await goToSimple(page);
+    await expectNoAxeViolations(page, "step 3");
+    await page.getByRole("button", { name: "See the original letter" }).click();
+    await expect(page.getByRole("button", { name: "Back to simple version" })).toBeFocused();
+    await expectNoAxeViolations(page, "step 3 original letter");
+  });
+
+  test("Step 3: reading aloud", async ({ page }) => {
+    await installFakeSpeech(page, { manual: true });
+    await goToSimple(page);
+    await page.getByRole("button", { name: "Read simple version aloud" }).click();
+    await expect(page.locator('[data-line="v0"]')).toHaveClass(/speaking/);
+    await expectNoAxeViolations(page, "step 3 reading");
+  });
+
+  test("Step 4: checklist, with a row ticked", async ({ page }) => {
+    await goToChecklist(page);
+    await page.getByRole("checkbox", { name: SAMPLE_ITEMS[0] }).check();
+    await expectNoAxeViolations(page, "step 4");
+  });
+
+  test("Step 4: reading aloud, then the confirmation", async ({ page }) => {
+    await installFakeSpeech(page, { manual: true });
     await goToChecklist(page);
     await page.getByRole("button", { name: "Read checklist aloud" }).click();
+    await endSpokenLine(page, 3); // tip, "Your checklist.", "Must have."
+    await expect(page.locator('[data-line="mustHave-0"]')).toHaveClass(/speaking/);
+    await expectNoAxeViolations(page, "step 4 reading (row)");
+    await endSpokenLine(page);
+    await expect(page.locator('[data-term-id="mustHave-0-t0"]')).toHaveClass(/speaking/);
+    await expectNoAxeViolations(page, "step 4 reading (word)");
+
     await page.getByRole("button", { name: "Done listening" }).click();
     await expect(
       page.getByRole("heading", { name: "You have everything you need to know." }),
     ).toBeFocused();
-    await expectNoAxeViolations(page, "done listening");
+    await expectNoAxeViolations(page, "step 4 confirmation");
   });
 
   test("word meaning sheet", async ({ page }) => {
-    await page.goto("/");
+    await useSample(page);
     await page.getByRole("button", { name: "furnish, show meaning" }).click();
     await expect(page.getByRole("dialog")).toBeVisible();
     await page.waitForTimeout(400); // let the slide-up finish
@@ -153,33 +158,37 @@ test.describe("zero axe violations", () => {
     await page.addInitScript(() => {
       Object.defineProperty(window, "speechSynthesis", { value: undefined, configurable: true });
     });
-    await page.goto("/");
-    await page.getByRole("button", { name: "Read the original aloud" }).click();
+    await useSample(page);
+    await page.getByRole("button", { name: "Read the letter aloud" }).click();
     await expect(page.getByRole("status").filter({ hasText: "Read aloud" })).toBeVisible();
-    await expectNoAxeViolations(page, "renewal with notice");
-  });
-
-  test("live mode renewal page", async ({ page }) => {
-    await page.goto("/?live=1");
-    await expect(page.getByLabel("Paste your own letter")).toBeVisible();
-    await expectNoAxeViolations(page, "renewal (live mode)");
+    await expectNoAxeViolations(page, "step 2 with notice");
   });
 });
 
 // ---------- Keyboard only ----------
 
-test("the whole journey works with the keyboard alone", async ({ page }) => {
+test("keyboard only: all four steps with the sample letter", async ({ page }) => {
   await page.goto("/");
 
-  // Renewal: Tab goes top to bottom, through every underlined word, then the buttons
+  // Step 1
+  expect(await tabOrder(page)).toEqual(["Choose a letter", "Use the sample letter"]);
+  await page.reload();
+  await tabTo(page, "Use the sample letter");
+  await page.keyboard.press("Enter");
+
+  // Step 2: focus is on the step heading; Tab runs through every word, then the controls
+  await expect(stepHeading(page, 2)).toBeFocused();
   expect(await tabOrder(page)).toEqual([
     ...ORIGINAL_WORDS.map((word) => `${word}, show meaning`),
-    "Simplify this",
-    "Read the original aloud",
+    "Read the letter aloud",
+    "Explain words while reading",
+    "Next: simple version",
+    "Skip to checklist",
+    "Back: upload your letter",
   ]);
 
-  // Open a word with Enter, look around the dialog, close with Esc
-  await page.reload();
+  // Open a word meaning with Enter, look around the dialog, close with Esc
+  await stepHeading(page, 2).focus();
   await tabTo(page, "documentary evidence, show meaning");
   await page.keyboard.press("Enter");
   await expect(page.getByRole("dialog").getByRole("heading")).toBeFocused();
@@ -195,34 +204,77 @@ test("the whole journey works with the keyboard alone", async ({ page }) => {
     page.getByRole("button", { name: "documentary evidence, show meaning" }),
   ).toBeFocused();
 
-  // Simplify -> error (focus on its heading) -> Try again
-  await tabTo(page, "Simplify this");
-  await page.keyboard.press("Enter");
-  await expect(
-    page.getByRole("heading", { name: "Sorry, we couldn't simplify this right now" }),
-  ).toBeFocused();
-  await tabTo(page, "Try again");
+  // Turn "Explain words while reading" off and on again with Space
+  await tabTo(page, "Explain words while reading");
   await page.keyboard.press("Space");
+  await expect(page.getByRole("checkbox", { name: "Explain words while reading" })).not.toBeChecked();
+  await page.keyboard.press("Space");
+  await expect(page.getByRole("checkbox", { name: "Explain words while reading" })).toBeChecked();
 
-  // Checklist: tick a box with Space, open "tax return" with Space, close with the Close button
-  const heading = page.getByRole("heading", { name: "What you need to send" });
-  await expect(heading).toBeFocused();
-  expect(await tabOrder(page)).toEqual([
-    "Proof of your income for the last 12 months (for example, your tax return)",
-    "tax return, show meaning",
-    "Proof of your address (for example, a recent bill)",
-    "A letter from your accountant, if you have one",
-    "If your income or home changed since last year, send proof of the change",
-    "Read checklist aloud",
-    "See the original text",
-  ]);
-  await heading.focus();
-  await tabTo(page, "Proof of your address (for example, a recent bill)");
+  // Read the letter aloud: focus lands on Pause; Pause, Play, Play again, Done listening
+  await stepHeading(page, 2).focus();
+  await tabTo(page, "Read the letter aloud");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("Reading aloud…")).toBeVisible();
+  expect(await focusedName(page)).toBe("Pause");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("Paused")).toBeVisible();
+  expect(await focusedName(page)).toBe("Play");
   await page.keyboard.press("Space");
-  await expect(
-    page.getByRole("checkbox", { name: "Proof of your address (for example, a recent bill)" }),
-  ).toBeChecked();
-  await heading.focus();
+  await expect(page.getByText("Reading aloud…")).toBeVisible();
+  await tabTo(page, "Play again");
+  await page.keyboard.press("Enter");
+  await tabTo(page, "Done listening");
+  await page.keyboard.press("Enter");
+  expect(await focusedName(page)).toBe("Read the letter aloud");
+
+  // Step 3
+  await tabTo(page, "Next: simple version");
+  await page.keyboard.press("Enter");
+  await expect(stepHeading(page, 3)).toBeFocused();
+  expect(await tabOrder(page)).toEqual([
+    "Read simple version aloud",
+    "Next: checklist",
+    "See the original letter",
+    "Back: understand the words",
+  ]);
+  await stepHeading(page, 3).focus();
+  await tabTo(page, "See the original letter");
+  await page.keyboard.press("Enter");
+  expect(await focusedName(page)).toBe("Back to simple version");
+  await page.keyboard.press("Enter");
+  expect(await focusedName(page)).toBe("See the original letter");
+
+  // Back to Step 2 and forward again, to prove Back works from the keyboard
+  await tabTo(page, "Back: understand the words");
+  await page.keyboard.press("Enter");
+  await expect(stepHeading(page, 2)).toBeFocused();
+  await tabTo(page, "Next: simple version");
+  await page.keyboard.press("Space");
+  await expect(stepHeading(page, 3)).toBeFocused();
+
+  // Step 4
+  await tabTo(page, "Next: checklist");
+  await page.keyboard.press("Enter");
+  await expect(stepHeading(page, 4)).toBeFocused();
+  expect(await tabOrder(page)).toEqual([
+    SAMPLE_ITEMS[0],
+    "tax return, show meaning",
+    SAMPLE_ITEMS[1],
+    SAMPLE_ITEMS[2],
+    SAMPLE_ITEMS[3],
+    "Read checklist aloud",
+    "Explain words while reading",
+    "Start again with another letter",
+    "Back: simple version",
+  ]);
+
+  // Tick a box with Space; open "tax return" with Space; close with the Close button
+  await stepHeading(page, 4).focus();
+  await tabTo(page, SAMPLE_ITEMS[1]);
+  await page.keyboard.press("Space");
+  await expect(page.getByRole("checkbox", { name: SAMPLE_ITEMS[1] })).toBeChecked();
+  await stepHeading(page, 4).focus();
   await tabTo(page, "tax return, show meaning");
   await page.keyboard.press("Space");
   await expect(page.getByRole("dialog")).toContainText(
@@ -232,26 +284,10 @@ test("the whole journey works with the keyboard alone", async ({ page }) => {
   await page.keyboard.press("Enter");
   await expect(page.getByRole("button", { name: "tax return, show meaning" })).toBeFocused();
 
-  // Original text and back
-  await tabTo(page, "See the original text");
-  await page.keyboard.press("Enter");
-  await expect(page.getByRole("heading", { name: "The original text" })).toBeFocused();
-  await tabTo(page, "Back to simple version");
-  await page.keyboard.press("Enter");
-  await expect(heading).toBeFocused();
-
-  // Read aloud: Pause, Play, Play again, Done listening, Back to checklist
+  // Read checklist aloud, Done listening, confirmation, Back to checklist
   await tabTo(page, "Read checklist aloud");
   await page.keyboard.press("Enter");
-  await expect(page.getByText("Reading aloud…")).toBeVisible();
-  await tabTo(page, "Pause");
-  await page.keyboard.press("Enter");
-  await expect(page.getByText("Paused")).toBeVisible();
-  expect(await focusedName(page)).toBe("Play");
-  await page.keyboard.press("Enter");
-  await expect(page.getByText("Reading aloud…")).toBeVisible();
-  await tabTo(page, "Play again");
-  await page.keyboard.press("Space");
+  expect(await focusedName(page)).toBe("Pause");
   await tabTo(page, "Done listening");
   await page.keyboard.press("Enter");
   await expect(
@@ -259,38 +295,72 @@ test("the whole journey works with the keyboard alone", async ({ page }) => {
   ).toBeFocused();
   await tabTo(page, "Back to checklist");
   await page.keyboard.press("Enter");
-  await expect(heading).toBeFocused();
-  await expect(
-    page.getByRole("checkbox", { name: "Proof of your address (for example, a recent bill)" }),
-  ).toBeChecked();
+  await expect(stepHeading(page, 4)).toBeFocused();
+  await expect(page.getByRole("checkbox", { name: SAMPLE_ITEMS[1] })).toBeChecked();
+
+  // Start again
+  await tabTo(page, "Start again with another letter");
+  await page.keyboard.press("Enter");
+  await expect(stepHeading(page, 1)).toBeFocused();
 });
 
-// ---------- Other audit items ----------
-
-/** Visit each screen in turn and run a check on it. */
-async function onEveryScreen(page: Page, check: (screen: string) => Promise<void>): Promise<void> {
+test("keyboard only: Skip to checklist", async ({ page }) => {
   await page.goto("/");
-  await check("renewal");
+  await tabTo(page, "Use the sample letter");
+  await page.keyboard.press("Space");
+  await expect(stepHeading(page, 2)).toBeFocused();
+  await tabTo(page, "Skip to checklist");
+  await page.keyboard.press("Enter");
+  await expect(stepHeading(page, 4)).toBeFocused();
+  await tabTo(page, "Back: simple version");
+  await page.keyboard.press("Enter");
+  await expect(stepHeading(page, 3)).toBeFocused();
+});
+
+test("keyboard only: the error state", async ({ page }) => {
+  await page.goto("/?demoError=1");
+  await tabTo(page, "Use the sample letter");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("heading", { name: "Sorry, that didn't work" })).toBeFocused();
+  expect(await tabOrder(page)).toEqual(["Try again", "Use the sample letter"]);
+  await page.getByRole("heading", { name: "Sorry, that didn't work" }).focus();
+  await tabTo(page, "Try again");
+  await page.keyboard.press("Enter");
+  await expect(stepHeading(page, 2)).toBeFocused();
+});
+
+// ---------- Other standing requirements ----------
+
+/** Visit each step and state in turn and run a check on it. */
+async function onEveryScreen(page: Page, check: (screen: string) => Promise<void>): Promise<void> {
+  await page.goto("/?demoError=1");
+  await check("step 1");
+  await page.getByRole("button", { name: "Use the sample letter" }).click();
+  await check("step 1 loading");
+  await expect(page.getByRole("alert")).toBeVisible();
+  await check("step 1 error");
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(stepHeading(page, 2)).toBeFocused();
+  await check("step 2");
   await page.getByRole("button", { name: "furnish, show meaning" }).click();
   await check("word meaning");
   await page.getByRole("button", { name: "Close" }).click();
-  await page.getByRole("button", { name: "Read the original aloud" }).click();
-  await check("reading the original");
+  await page.getByRole("button", { name: "Read the letter aloud" }).click();
+  await check("step 2 reading");
   await page.getByRole("button", { name: "Done listening" }).click();
-  await page.getByRole("button", { name: "Simplify this" }).click();
-  await check("simplifying");
-  await expect(page.getByRole("alert")).toBeVisible();
-  await check("error");
-  await page.getByRole("button", { name: "Try again" }).click();
-  await expect(page.getByRole("heading", { name: "What you need to send" })).toBeFocused();
-  await check("checklist");
-  await page.getByRole("button", { name: "See the original text" }).click();
-  await check("original");
-  await page.getByRole("button", { name: "Back to simple version" }).click();
+  await page.getByRole("button", { name: "Back: upload your letter" }).click();
+  await check("step 1 with letter");
+  await page.getByRole("button", { name: "Next: understand the words" }).click();
+  await page.getByRole("button", { name: "Next: simple version" }).click();
+  await check("step 3");
+  await page.getByRole("button", { name: "See the original letter" }).click();
+  await check("step 3 original letter");
+  await page.getByRole("button", { name: "Next: checklist" }).click();
+  await check("step 4");
   await page.getByRole("button", { name: "Read checklist aloud" }).click();
-  await check("reading the checklist");
+  await check("step 4 reading");
   await page.getByRole("button", { name: "Done listening" }).click();
-  await check("done listening");
+  await check("step 4 confirmation");
 }
 
 for (const width of [640, 320, 195]) {
@@ -300,6 +370,23 @@ for (const width of [640, 320, 195]) {
     await onEveryScreen(page, async () => expectNoSidewaysScroll(page));
   });
 }
+
+test("every step shows 'Step X of 4: name' and the right number of filled segments", async ({
+  page,
+}) => {
+  await useSample(page);
+  for (const [step, next] of [
+    [2, "Next: simple version"],
+    [3, "Next: checklist"],
+    [4, null],
+  ] as const) {
+    await expect(stepHeading(page, step)).toBeVisible();
+    await expect(page.locator(".segments span")).toHaveCount(4);
+    await expect(page.locator(".segments .on")).toHaveCount(step);
+    if (next) await page.getByRole("button", { name: next }).click();
+  }
+  await expect(page.locator("html")).toHaveAttribute("lang", "en-IE");
+});
 
 test("every button name is unique on its screen and says what it does", async ({ page }) => {
   await onEveryScreen(page, async (screen) => {
@@ -311,7 +398,10 @@ test("every button name is unique on its screen and says what it does", async ({
       );
     expect(new Set(names).size, `duplicate button names on ${screen}: ${names}`).toBe(names.length);
     for (const name of names) {
-      expect(["Done", "Read aloud", "OK", ""], `vague button name on ${screen}`).not.toContain(name);
+      expect(
+        ["Done", "Read aloud", "OK", "Back", "Next", ""],
+        `vague button name on ${screen}`,
+      ).not.toContain(name);
     }
   });
 });
@@ -320,11 +410,18 @@ test("tap targets are big enough", async ({ page }) => {
   await onEveryScreen(page, async (screen) => {
     const sizes = await page.evaluate(() => {
       const scope = document.querySelector("dialog[open]") ?? document.querySelector("#screen")!;
-      return [...scope.querySelectorAll<HTMLElement>("button, .check-row")].map((el) => {
-        const box = el.getBoundingClientRect();
-        const min = el.matches(".btn-primary, .btn-secondary, .check-row") ? 56 : 48;
-        return { name: el.textContent!.trim().slice(0, 30), w: box.width, h: box.height, min };
-      });
+      return [...scope.querySelectorAll<HTMLElement>("button, .check-row, .option-row")].map(
+        (el) => {
+          const box = el.getBoundingClientRect();
+          const tall = el.matches(".btn-primary, .btn-secondary, .check-row, .option-row");
+          return {
+            name: el.textContent!.trim().slice(0, 30),
+            w: box.width,
+            h: box.height,
+            min: tall ? 56 : 48,
+          };
+        },
+      );
     });
     for (const size of sizes) {
       expect(size.h, `${size.name} on ${screen} is too short`).toBeGreaterThanOrEqual(size.min);
@@ -337,7 +434,7 @@ test("stacked buttons and rows have at least 8px between them", async ({ page })
   await onEveryScreen(page, async (screen) => {
     const gaps = await page.evaluate(() => {
       const scope = document.querySelector("dialog[open]") ?? document.querySelector("#screen")!;
-      const boxes = [...scope.querySelectorAll<HTMLElement>(".btn, .check-row")]
+      const boxes = [...scope.querySelectorAll<HTMLElement>(".btn, .check-row, .option-row")]
         .map((el) => el.getBoundingClientRect())
         .sort((a, b) => a.top - b.top);
       return boxes.slice(1).map((box, i) => box.top - boxes[i].bottom);
@@ -354,16 +451,16 @@ test.describe("reduced motion", () => {
       page.locator(selector).first().evaluate((el) => getComputedStyle(el).animationName);
 
     await page.goto("/");
+    await page.getByRole("button", { name: "Use the sample letter" }).click();
+    expect(await animationOf(".loader span")).toBe("none");
+    await expect(stepHeading(page, 2)).toBeFocused();
+
     await page.getByRole("button", { name: "furnish, show meaning" }).click();
     expect(await animationOf("dialog.sheet")).toBe("none");
     await page.getByRole("button", { name: "Close" }).click();
 
-    await page.getByRole("button", { name: "Read the original aloud" }).click();
+    await page.getByRole("button", { name: "Read the letter aloud" }).click();
     expect(await animationOf(".sound-bar i")).toBe("none");
-    await page.getByRole("button", { name: "Done listening" }).click();
-
-    await page.getByRole("button", { name: "Simplify this" }).click();
-    expect(await animationOf(".loader span")).toBe("none");
   });
 });
 
